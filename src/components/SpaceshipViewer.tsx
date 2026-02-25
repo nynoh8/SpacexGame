@@ -1,0 +1,89 @@
+import React, { useRef, useImperativeHandle, forwardRef } from "react";
+import { Canvas } from "@react-three/fiber";
+import { OrbitControls, Environment, ContactShadows } from "@react-three/drei";
+import * as THREE from "three";
+import { GLTFExporter } from "three-stdlib";
+import { Part } from "../utils/spaceshipGenerator";
+import { SpaceshipModel } from "./SpaceshipModel";
+
+interface SpaceshipViewerProps {
+  parts: Part[];
+}
+
+export interface SpaceshipViewerRef {
+  exportGLTF: () => void;
+}
+
+export const SpaceshipViewer = forwardRef<
+  SpaceshipViewerRef,
+  SpaceshipViewerProps
+>(({ parts }, ref) => {
+  const groupRef = useRef<THREE.Group>(null);
+
+  useImperativeHandle(ref, () => ({
+    exportGLTF: () => {
+      if (!groupRef.current) return;
+
+      const exporter = new GLTFExporter();
+      exporter.parse(
+        groupRef.current,
+        (gltf) => {
+          const output = JSON.stringify(gltf, null, 2);
+          const blob = new Blob([output], { type: "text/plain" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.style.display = "none";
+          link.href = url;
+          link.download = "spaceship.gltf";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        },
+        (error) => {
+          console.error("An error happened during export:", error);
+        },
+        { binary: false },
+      );
+    },
+  }));
+
+  return (
+    <div className="absolute inset-0 bg-[#0a0a0a]">
+      <Canvas camera={{ position: [15, 10, 15], fov: 45 }} shadows>
+        <color attach="background" args={["#0a0a0a"]} />
+        <ambientLight intensity={0.5} />
+        <directionalLight
+          position={[10, 20, 10]}
+          intensity={1.5}
+          castShadow
+          shadow-mapSize={[2048, 2048]}
+        />
+        <pointLight position={[-10, -10, -10]} intensity={0.5} />
+
+        <SpaceshipModel ref={groupRef} parts={parts} />
+
+        <ContactShadows
+          position={[0, -5, 0]}
+          opacity={0.4}
+          scale={40}
+          blur={2}
+          far={10}
+        />
+
+        <OrbitControls
+          makeDefault
+          autoRotate
+          autoRotateSpeed={0.5}
+          enablePan={false}
+          maxPolarAngle={Math.PI / 2 + 0.2}
+          minDistance={5}
+          maxDistance={50}
+        />
+        <React.Suspense fallback={null}>
+          <Environment preset="city" />
+        </React.Suspense>
+      </Canvas>
+    </div>
+  );
+});

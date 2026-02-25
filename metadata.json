@@ -1,0 +1,5 @@
+{
+  "name": "AeroForge 3D",
+  "description": "An online tool to automatically generate 3D spaceships and export them as GLTF for use in 3D games.",
+  "requestFramePermissions": []
+}
