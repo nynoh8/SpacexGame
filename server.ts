@@ -19,16 +19,18 @@ async function startServer() {
     console.log("Player connected:", socket.id);
 
     socket.on("join", (data) => {
-      players.set(socket.id, {
+      const newPlayer = {
         id: socket.id,
         parts: data.parts,
-        position: [0, 0, 0],
+        position: [0, 0, -2800], // Spawn near the center but a bit away
         quaternion: [0, 0, 0, 1],
-      });
+        health: 100,
+      };
+      players.set(socket.id, newPlayer);
       // Send all existing players to the new player
       socket.emit("init", Array.from(players.values()));
       // Tell others about the new player
-      socket.broadcast.emit("player:join", players.get(socket.id));
+      socket.broadcast.emit("player:join", newPlayer);
     });
 
     socket.on("move", (data) => {
@@ -45,8 +47,32 @@ async function startServer() {
     });
 
     socket.on("shoot", (data) => {
-      // Broadcast bullet to everyone including sender (or just others, let's do everyone for simplicity)
       io.emit("bullet:new", { ...data, playerId: socket.id });
+    });
+
+    socket.on("damage", (data) => {
+      const target = players.get(data.targetId);
+      if (target && target.health > 0) {
+        target.health -= data.amount;
+        io.emit("player:health", { id: target.id, health: target.health });
+        
+        // Also broadcast bullet destroy so everyone removes it
+        io.emit("bullet:destroy", data.bulletId);
+
+        if (target.health <= 0) {
+          io.emit("player:die", { id: target.id });
+          
+          // Respawn after 3 seconds
+          setTimeout(() => {
+            if (players.has(target.id)) {
+              const p = players.get(target.id);
+              p.health = 100;
+              p.position = [(Math.random() - 0.5) * 500, 0, -2800 + (Math.random() - 0.5) * 500];
+              io.emit("player:respawn", { id: target.id, position: p.position, health: p.health });
+            }
+          }, 3000);
+        }
+      }
     });
 
     socket.on("disconnect", () => {
