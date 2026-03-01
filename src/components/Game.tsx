@@ -790,6 +790,7 @@ export function Game({ initialSeed, playerName, onExit }: { initialSeed: string;
           { name: "thrust", keys: ["Shift"] },
           { name: "brake", keys: ["Control"] },
           { name: "shoot", keys: ["Space"] },
+          { name: "missile", keys: ["f", "F"] },
         ]}
       >
         <Canvas shadows camera={{ fov: 60, far: 30000 }}>
