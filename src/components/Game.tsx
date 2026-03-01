@@ -7,13 +7,13 @@ import {
   Html,
 } from "@react-three/drei";
 import * as THREE from "three";
-import { Part } from "../utils/spaceshipGenerator";
+import { generateSpaceship, Part } from "../utils/spaceshipGenerator";
 import { SpaceshipModel } from "./SpaceshipModel";
-import { Rocket } from "lucide-react";
+import { Rocket, Trophy } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 import { v4 as uuidv4 } from "uuid";
 
-export const activeBullets = new Map<string, { position: THREE.Vector3, velocity: THREE.Vector3, playerId: string }>();
+export const activeBullets = new Map<string, { position: THREE.Vector3, velocity: THREE.Vector3, ownerId: string }>();
 
 function Player({
   parts,
@@ -21,12 +21,16 @@ function Player({
   localData,
   health,
   isDead,
+  stats,
+  playerName,
 }: {
   parts: Part[];
   socket: Socket;
   localData: React.MutableRefObject<any>;
   health: number;
   isDead: boolean;
+  stats: any;
+  playerName: string;
 }) {
   const shipRef = useRef<THREE.Group>(null);
   const [, get] = useKeyboardControls();
@@ -36,8 +40,8 @@ function Player({
   const lastShoot = useRef(0);
 
   useEffect(() => {
-    socket.emit("join", { parts });
-  }, [socket, parts]);
+    // Join is now handled in Game component
+  }, []);
 
   useFrame((state, delta) => {
     if (!shipRef.current) return;
@@ -49,8 +53,13 @@ function Player({
 
     const { pitchUp, pitchDown, yawLeft, yawRight, rollLeft, rollRight, thrust, brake, shoot } = get();
 
+    // Stats multipliers
+    const speedMult = stats?.speedMultiplier || 1;
+    const turnMult = stats?.turnSpeedMultiplier || 1;
+    const fireRateMult = stats?.fireRateMultiplier || 1;
+
     // Inertia factors
-    const turnPower = 3.0;
+    const turnPower = 3.0 * turnMult;
     
     // Apply input to angular velocity
     if (pitchUp) angularVelocity.current.x += turnPower * delta;
@@ -70,18 +79,18 @@ function Player({
 
     // Thrust
     if (thrust) {
-      velocity.current = THREE.MathUtils.lerp(velocity.current, 200, delta * 0.5);
+      velocity.current = THREE.MathUtils.lerp(velocity.current, 200 * speedMult, delta * 0.5);
     } else if (brake) {
       velocity.current = THREE.MathUtils.lerp(velocity.current, 0, delta * 2);
     } else {
-      velocity.current = THREE.MathUtils.lerp(velocity.current, 30, delta * 0.2); // Cruising speed
+      velocity.current = THREE.MathUtils.lerp(velocity.current, 30 * speedMult, delta * 0.2); // Cruising speed
     }
 
     // Move forward
     shipRef.current.translateZ(-velocity.current * delta);
 
     // Shooting
-    if (shoot && state.clock.elapsedTime - lastShoot.current > 0.15) {
+    if (shoot && state.clock.elapsedTime - lastShoot.current > (0.15 / fireRateMult)) {
       lastShoot.current = state.clock.elapsedTime;
       const bulletPos = shipRef.current.position.clone();
       const bulletDir = new THREE.Vector3(0, 0, -1).applyQuaternion(
@@ -98,10 +107,10 @@ function Player({
 
     // Collision detection
     activeBullets.forEach((bullet, id) => {
-      if (bullet.playerId !== socket.id) {
+      if (bullet.ownerId !== socket.id) {
         const dist = shipRef.current!.position.distanceTo(bullet.position);
         if (dist < 4.0) {
-          socket.emit("damage", { targetId: socket.id, amount: 20, bulletId: id });
+          socket.emit("damage", { targetId: socket.id, attackerId: bullet.ownerId, amount: 20, bulletId: id });
           activeBullets.delete(id); // Optimistically remove
         }
       }
@@ -142,7 +151,7 @@ function Player({
       <SpaceshipModel parts={parts} />
       <Html center position={[0, 4, 0]}>
         <div className="text-emerald-400 font-bold text-xs pointer-events-none whitespace-nowrap bg-black/50 px-2 py-1 rounded border border-emerald-500/30 flex flex-col items-center gap-1">
-          <span>▼ Player</span>
+          <span>▼ {playerName || "Player"}</span>
           <div className="w-16 h-1.5 bg-gray-800 rounded-full overflow-hidden">
             <div className="h-full bg-emerald-500" style={{ width: `${health}%` }} />
           </div>
@@ -154,6 +163,13 @@ function Player({
         intensity={2}
         color="#44ccff"
         distance={20}
+      />
+      {/* Top light for visibility */}
+      <pointLight
+        position={[0, 8, 0]}
+        intensity={3}
+        color="#ffffff"
+        distance={40}
       />
     </group>
   );
@@ -178,17 +194,20 @@ function Explosion({ position }: { position: [number, number, number] }) {
 
 function RemotePlayer({
   id,
-  parts,
+  activeSeed,
+  name,
   remoteData,
 }: {
   id: string;
-  parts: Part[];
+  activeSeed: string;
+  name: string;
   remoteData: React.MutableRefObject<Record<string, any>>;
 }) {
   const ref = useRef<THREE.Group>(null);
   const [health, setHealth] = useState(100);
   const [isDead, setIsDead] = useState(false);
   const [explosionPos, setExplosionPos] = useState<[number, number, number] | null>(null);
+  const parts = useMemo(() => generateSpaceship(activeSeed), [activeSeed]);
 
   useFrame(() => {
     const data = remoteData.current[id];
@@ -225,12 +244,19 @@ function RemotePlayer({
       <SpaceshipModel parts={parts} />
       <Html center position={[0, 4, 0]}>
         <div className="text-red-400 font-bold text-xs pointer-events-none whitespace-nowrap bg-black/50 px-2 py-1 rounded border border-red-500/30 flex flex-col items-center gap-1">
-          <span>▼ Enemy</span>
+          <span>▼ {name || "Enemy"}</span>
           <div className="w-16 h-1.5 bg-gray-800 rounded-full overflow-hidden">
             <div className="h-full bg-red-500" style={{ width: `${health}%` }} />
           </div>
         </div>
       </Html>
+      {/* Top light for visibility */}
+      <pointLight
+        position={[0, 8, 0]}
+        intensity={3}
+        color="#ffffff"
+        distance={40}
+      />
     </group>
   );
 }
@@ -266,7 +292,7 @@ function BulletsManager({ socket }: { socket: Socket }) {
       activeBullets.set(data.id, {
         position: mesh.position,
         velocity: vel,
-        playerId: data.playerId
+        ownerId: data.ownerId
       });
     };
 
@@ -475,12 +501,18 @@ function RadarLogic({
   return null;
 }
 
-export function Game({ parts, onExit }: { parts: Part[]; onExit: () => void }) {
+export function Game({ initialSeed, playerName, onExit }: { initialSeed: string; playerName: string; onExit: () => void }) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [players, setPlayers] = useState<any[]>([]);
   const [health, setHealth] = useState(100);
   const [isDead, setIsDead] = useState(false);
+  const [showUI, setShowUI] = useState(true);
   const [explosionPos, setExplosionPos] = useState<[number, number, number] | null>(null);
+  const [stats, setStats] = useState<any>(null);
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [joinError, setJoinError] = useState("");
+  const [localParts, setLocalParts] = useState<Part[]>([]);
+
   const remoteData = useRef<Record<string, any>>({});
   const localData = useRef<any>({
     position: [0, 0, -2800],
@@ -488,8 +520,36 @@ export function Game({ parts, onExit }: { parts: Part[]; onExit: () => void }) {
   });
 
   useEffect(() => {
+    setLocalParts(generateSpaceship(initialSeed));
+  }, [initialSeed]);
+
+  useEffect(() => {
     const newSocket = io();
     setSocket(newSocket);
+
+    newSocket.on("connect", () => {
+      newSocket.emit("join", {
+        name: playerName,
+        seed: initialSeed,
+        position: [(Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100],
+        quaternion: [0, 0, 0, 1]
+      });
+    });
+
+    newSocket.on("join_error", (msg) => {
+      setJoinError(msg);
+    });
+
+    newSocket.on("join_success", (player) => {
+      setHealth(player.health);
+      setStats(player.stats);
+      localData.current.stats = player.stats;
+      localData.current.activeSeed = player.activeSeed;
+    });
+
+    newSocket.on("leaderboard:update", (lb) => {
+      setLeaderboard(lb);
+    });
 
     newSocket.on("init", (serverPlayers: any[]) => {
       const others = serverPlayers.filter((p) => p.id !== newSocket.id);
@@ -499,7 +559,9 @@ export function Game({ parts, onExit }: { parts: Part[]; onExit: () => void }) {
           position: p.position,
           quaternion: p.quaternion,
           health: p.health,
-          isDead: false
+          isDead: p.isDead,
+          activeSeed: p.activeSeed,
+          name: p.name
         };
       });
     });
@@ -510,7 +572,9 @@ export function Game({ parts, onExit }: { parts: Part[]; onExit: () => void }) {
         position: player.position,
         quaternion: player.quaternion,
         health: player.health,
-        isDead: false
+        isDead: false,
+        activeSeed: player.activeSeed,
+        name: player.name
       };
     });
 
@@ -544,10 +608,16 @@ export function Game({ parts, onExit }: { parts: Part[]; onExit: () => void }) {
         setHealth(data.health);
         setExplosionPos(null);
         localData.current.position = data.position;
+        localData.current.activeSeed = data.activeSeed;
+        localData.current.stats = data.stats;
+        setStats(data.stats);
+        setLocalParts(generateSpaceship(data.activeSeed));
       } else if (remoteData.current[data.id]) {
         remoteData.current[data.id].isDead = false;
         remoteData.current[data.id].health = data.health;
         remoteData.current[data.id].position = data.position;
+        remoteData.current[data.id].activeSeed = data.activeSeed;
+        setPlayers((prev) => prev.map(p => p.id === data.id ? { ...p, activeSeed: data.activeSeed } : p));
       }
     });
 
@@ -561,7 +631,21 @@ export function Game({ parts, onExit }: { parts: Part[]; onExit: () => void }) {
     };
   }, []);
 
-  if (!socket) {
+  if (joinError) {
+    return (
+      <div className="absolute inset-0 bg-black flex flex-col items-center justify-center text-white font-mono gap-4">
+        <div className="text-red-500 text-xl font-bold">{joinError}</div>
+        <button
+          onClick={onExit}
+          className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl backdrop-blur-md transition-all font-medium border border-white/10"
+        >
+          Return to Hangar
+        </button>
+      </div>
+    );
+  }
+
+  if (!socket || !stats) {
     return (
       <div className="absolute inset-0 bg-black flex items-center justify-center text-white font-mono">
         Connecting to server...
@@ -575,10 +659,10 @@ export function Game({ parts, onExit }: { parts: Part[]; onExit: () => void }) {
         map={[
           { name: "pitchUp", keys: ["s", "S", "ArrowDown"] },
           { name: "pitchDown", keys: ["w", "W", "ArrowUp"] },
-          { name: "yawLeft", keys: ["q", "Q"] },
-          { name: "yawRight", keys: ["e", "E"] },
-          { name: "rollLeft", keys: ["a", "A", "ArrowLeft"] },
-          { name: "rollRight", keys: ["d", "D", "ArrowRight"] },
+          { name: "yawLeft", keys: ["a", "A", "ArrowLeft"] },
+          { name: "yawRight", keys: ["d", "D", "ArrowRight"] },
+          { name: "rollLeft", keys: ["q", "Q"] },
+          { name: "rollRight", keys: ["e", "E"] },
           { name: "thrust", keys: ["Shift"] },
           { name: "brake", keys: ["Control"] },
           { name: "shoot", keys: ["Space"] },
@@ -596,13 +680,14 @@ export function Game({ parts, onExit }: { parts: Part[]; onExit: () => void }) {
             speed={1}
           />
 
-          <Player parts={parts} socket={socket} localData={localData} health={health} isDead={isDead} />
+          <Player parts={localParts} socket={socket} localData={localData} health={health} isDead={isDead} stats={stats} playerName={playerName} />
           {isDead && explosionPos && <Explosion position={explosionPos} />}
           {players.map((p) => (
             <RemotePlayer
               key={p.id}
               id={p.id}
-              parts={p.parts}
+              activeSeed={p.activeSeed}
+              name={p.name}
               remoteData={remoteData}
             />
           ))}
@@ -625,34 +710,46 @@ export function Game({ parts, onExit }: { parts: Part[]; onExit: () => void }) {
             Space Explorer (Multiplayer)
           </h2>
         </div>
-        <div className="bg-black/40 backdrop-blur-md p-4 rounded-xl border border-white/10 flex flex-col gap-2">
-          <p className="text-sm text-gray-300">
-            <span className="text-emerald-400 font-bold">W/S</span> : Pitch
-          </p>
-          <p className="text-sm text-gray-300">
-            <span className="text-emerald-400 font-bold">A/D</span> : Roll
-          </p>
-          <p className="text-sm text-gray-300">
-            <span className="text-emerald-400 font-bold">Q/E</span> : Yaw
-          </p>
-          <p className="text-sm text-gray-300">
-            <span className="text-emerald-400 font-bold">SHIFT</span> : Thrust
-          </p>
-          <p className="text-sm text-gray-300">
-            <span className="text-emerald-400 font-bold">CTRL</span> : Brake
-          </p>
-          <p className="text-sm text-gray-300">
-            <span className="text-emerald-400 font-bold">SPACE</span> : Shoot
-          </p>
-        </div>
-        <div className="mt-4 bg-black/40 backdrop-blur-md p-4 rounded-xl border border-white/10">
-          <p className="text-sm text-gray-300">
-            Players Online:{" "}
-            <span className="text-emerald-400 font-bold">
-              {players.length + 1}
-            </span>
-          </p>
-        </div>
+        
+        {showUI && (
+          <>
+            <div className="bg-black/40 backdrop-blur-md p-4 rounded-xl border border-white/10 flex flex-col gap-2">
+              <p className="text-sm text-gray-300">
+                <span className="text-emerald-400 font-bold">W/S</span> : Pitch
+              </p>
+              <p className="text-sm text-gray-300">
+                <span className="text-emerald-400 font-bold">A/D</span> : Yaw (Turn)
+              </p>
+              <p className="text-sm text-gray-300">
+                <span className="text-emerald-400 font-bold">Q/E</span> : Roll
+              </p>
+              <p className="text-sm text-gray-300">
+                <span className="text-emerald-400 font-bold">SHIFT</span> : Thrust
+              </p>
+              <p className="text-sm text-gray-300">
+                <span className="text-emerald-400 font-bold">CTRL</span> : Brake
+              </p>
+              <p className="text-sm text-gray-300">
+                <span className="text-emerald-400 font-bold">SPACE</span> : Shoot
+              </p>
+            </div>
+            <div className="mt-4 bg-black/40 backdrop-blur-md p-4 rounded-xl border border-white/10">
+              <p className="text-sm text-gray-300">
+                Players Online:{" "}
+                <span className="text-emerald-400 font-bold">
+                  {players.length + 1}
+                </span>
+              </p>
+            </div>
+          </>
+        )}
+
+        <button
+          onClick={() => setShowUI(!showUI)}
+          className="pointer-events-auto mt-4 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg backdrop-blur-md transition-all text-xs border border-white/10"
+        >
+          {showUI ? "Minimize UI" : "Show UI"}
+        </button>
         
         {/* Health Bar */}
         <div className="mt-4 bg-black/40 backdrop-blur-md p-4 rounded-xl border border-white/10">
@@ -672,9 +769,32 @@ export function Game({ parts, onExit }: { parts: Part[]; onExit: () => void }) {
         )}
       </div>
 
+      {/* Leaderboard */}
+      {showUI && (
+        <div className="absolute top-6 right-6 bg-black/40 backdrop-blur-md p-4 rounded-xl border border-white/10 w-64 pointer-events-auto font-mono">
+          <div className="flex items-center gap-2 mb-3 text-emerald-400">
+            <Trophy className="w-4 h-4" />
+            <h3 className="font-bold text-sm uppercase tracking-wider">Top Pilots</h3>
+          </div>
+          <div className="flex flex-col gap-2">
+            {leaderboard.map((player, index) => (
+              <div key={player.id} className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-500 font-bold w-4">{index + 1}.</span>
+                  <span className={player.id === socket.id ? "text-emerald-400 font-bold" : "text-gray-300"}>
+                    {player.name}
+                  </span>
+                </div>
+                <span className="text-emerald-400 font-mono">{player.shipsOwned} {player.shipsOwned === 1 ? 'ship' : 'ships'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <button
         onClick={onExit}
-        className="absolute top-6 right-6 px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl backdrop-blur-md transition-all font-medium border border-white/10"
+        className="absolute bottom-6 left-6 px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl backdrop-blur-md transition-all font-medium border border-white/10 pointer-events-auto"
       >
         Return to Hangar
       </button>

@@ -22,28 +22,42 @@ const accentColors = [
   "#ffffff",
 ];
 
-function randomChoice<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
+function randomChoice<T>(arr: T[], random: () => number): T {
+  return arr[Math.floor(random() * arr.length)];
 }
 
-export function generateSpaceship(): Part[] {
+export function generateSpaceship(seed?: string): Part[] {
+  let rngState = 0;
+  if (seed) {
+    for (let i = 0; i < seed.length; i++) {
+      rngState = seed.charCodeAt(i) + ((rngState << 5) - rngState);
+    }
+  } else {
+    rngState = Math.random() * 1000000;
+  }
+
+  const random = () => {
+    const x = Math.sin(rngState++) * 10000;
+    return x - Math.floor(x);
+  };
+
   const parts: Part[] = [];
-  const primaryColor = randomChoice(baseColors);
-  const secondaryColor = randomChoice(baseColors);
-  const accentColor = randomChoice(accentColors);
+  const primaryColor = randomChoice(baseColors, random);
+  const secondaryColor = randomChoice(baseColors, random);
+  const accentColor = randomChoice(accentColors, random);
   const glassColor = "#44ccff";
 
   const getThemeColor = () => {
-    const r = Math.random();
+    const r = random();
     if (r < 0.6) return primaryColor;
     if (r < 0.9) return secondaryColor;
     return accentColor;
   };
 
   // Main hull
-  const hullLength = 4 + Math.random() * 8;
-  const hullWidth = 1 + Math.random() * 3;
-  const hullHeight = 1 + Math.random() * 2;
+  const hullLength = 4 + random() * 8;
+  const hullWidth = 1 + random() * 3;
+  const hullHeight = 1 + random() * 2;
 
   parts.push({
     id: uuidv4(),
@@ -55,10 +69,10 @@ export function generateSpaceship(): Part[] {
   });
 
   // Cockpit
-  const cockpitLength = 1 + Math.random() * 2;
-  const cockpitWidth = hullWidth * (0.4 + Math.random() * 0.4);
-  const cockpitHeight = 0.5 + Math.random() * 1.5;
-  const cockpitZ = Math.random() * (hullLength / 2) - cockpitLength / 2;
+  const cockpitLength = 1 + random() * 2;
+  const cockpitWidth = hullWidth * (0.4 + random() * 0.4);
+  const cockpitHeight = 0.5 + random() * 1.5;
+  const cockpitZ = random() * (hullLength / 2) - cockpitLength / 2;
 
   parts.push({
     id: uuidv4(),
@@ -84,13 +98,13 @@ export function generateSpaceship(): Part[] {
   });
 
   // Wings
-  const wingCount = 1 + Math.floor(Math.random() * 3);
+  const wingCount = 1 + Math.floor(random() * 3);
   for (let i = 0; i < wingCount; i++) {
-    const wingSpan = 2 + Math.random() * 8;
-    const wingLength = 1 + Math.random() * 5;
-    const wingThickness = 0.2 + Math.random() * 0.8;
-    const wingZ = -hullLength / 2 + Math.random() * hullLength * 0.8;
-    const wingY = (Math.random() - 0.5) * hullHeight;
+    const wingSpan = 2 + random() * 8;
+    const wingLength = 1 + random() * 5;
+    const wingThickness = 0.2 + random() * 0.8;
+    const wingZ = -hullLength / 2 + random() * hullLength * 0.8;
+    const wingY = (random() - 0.5) * hullHeight;
     const wingColor = getThemeColor();
 
     // Right wing
@@ -114,11 +128,11 @@ export function generateSpaceship(): Part[] {
     });
 
     // Wing attachments / weapons / pods
-    if (Math.random() > 0.3) {
-      const podLength = 1 + Math.random() * 4;
-      const podRadius = 0.2 + Math.random() * 0.6;
+    if (random() > 0.3) {
+      const podLength = 1 + random() * 4;
+      const podRadius = 0.2 + random() * 0.6;
       const podColor = getThemeColor();
-      const podType = Math.random() > 0.5 ? "cylinder" : "box";
+      const podType = random() > 0.5 ? "cylinder" : "box";
 
       parts.push({
         id: uuidv4(),
@@ -146,13 +160,13 @@ export function generateSpaceship(): Part[] {
   }
 
   // Engines
-  const engineCount = 1 + Math.floor(Math.random() * 3);
-  const engineRadius = 0.4 + Math.random() * 1.2;
-  const engineLength = 1 + Math.random() * 3;
+  const engineCount = 1 + Math.floor(random() * 3);
+  const engineRadius = 0.4 + random() * 1.2;
+  const engineLength = 1 + random() * 3;
   const engineColor = secondaryColor;
   const glowColor = accentColor;
 
-  if (engineCount === 1 || Math.random() > 0.5) {
+  if (engineCount === 1 || random() > 0.5) {
     // Single central engine
     parts.push({
       id: uuidv4(),
@@ -177,15 +191,15 @@ export function generateSpaceship(): Part[] {
     // Paired engines
     const pairs = Math.floor(engineCount / 2) + (engineCount === 2 ? 1 : 0);
     for (let i = 0; i < pairs; i++) {
-      const engineX = hullWidth / 2 + Math.random() * 2;
-      const engineY = (Math.random() - 0.5) * hullHeight;
+      const engineX = hullWidth / 2 + random() * 2;
+      const engineY = (random() - 0.5) * hullHeight;
       parts.push({
         id: uuidv4(),
         type: "cylinder",
         position: [
           engineX,
           engineY,
-          -hullLength / 2 - engineLength / 2 + Math.random(),
+          -hullLength / 2 - engineLength / 2 + random(),
         ],
         scale: [engineRadius, engineLength, engineRadius],
         rotation: [Math.PI / 2, 0, 0],
@@ -197,7 +211,7 @@ export function generateSpaceship(): Part[] {
         position: [
           -engineX,
           engineY,
-          -hullLength / 2 - engineLength / 2 + Math.random(),
+          -hullLength / 2 - engineLength / 2 + random(),
         ],
         scale: [engineRadius, engineLength, engineRadius],
         rotation: [Math.PI / 2, 0, 0],
@@ -225,12 +239,12 @@ export function generateSpaceship(): Part[] {
   }
 
   // Greebles (small details on hull)
-  const greebleCount = 5 + Math.floor(Math.random() * 15);
+  const greebleCount = 5 + Math.floor(random() * 15);
   for (let i = 0; i < greebleCount; i++) {
-    const gSize = 0.2 + Math.random() * 0.8;
-    const gX = (Math.random() - 0.5) * hullWidth;
+    const gSize = 0.2 + random() * 0.8;
+    const gX = (random() - 0.5) * hullWidth;
     const gY = hullHeight / 2 + gSize / 2;
-    const gZ = (Math.random() - 0.5) * hullLength;
+    const gZ = (random() - 0.5) * hullLength;
 
     parts.push({
       id: uuidv4(),

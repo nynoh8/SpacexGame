@@ -5,6 +5,7 @@ import {
 } from "./components/SpaceshipViewer";
 import { Game } from "./components/Game";
 import { generateSpaceship, Part } from "./utils/spaceshipGenerator";
+import { getShipStats } from "./utils/shipStats";
 import {
   Download,
   RefreshCw,
@@ -12,11 +13,16 @@ import {
   Settings2,
   Code,
   Rocket,
+  Hash,
+  User,
 } from "lucide-react";
 
 export default function App() {
   const [parts, setParts] = useState<Part[]>([]);
   const [mode, setMode] = useState<"hangar" | "game">("hangar");
+  const [seed, setSeed] = useState("");
+  const [playerName, setPlayerName] = useState("");
+  const [stats, setStats] = useState<any>(null);
   const viewerRef = useRef<SpaceshipViewerRef>(null);
 
   useEffect(() => {
@@ -24,7 +30,19 @@ export default function App() {
   }, []);
 
   const handleGenerate = () => {
-    setParts(generateSpaceship());
+    const newSeed = Math.random().toString(36).substring(2, 10).toUpperCase();
+    setSeed(newSeed);
+    setParts(generateSpaceship(newSeed));
+    setStats(getShipStats(newSeed));
+  };
+
+  const handleSeedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newSeed = e.target.value.toUpperCase();
+    setSeed(newSeed);
+    if (newSeed) {
+      setParts(generateSpaceship(newSeed));
+      setStats(getShipStats(newSeed));
+    }
   };
 
   const handleExport = () => {
@@ -34,7 +52,7 @@ export default function App() {
   };
 
   if (mode === "game") {
-    return <Game parts={parts} onExit={() => setMode("hangar")} />;
+    return <Game initialSeed={seed} playerName={playerName} onExit={() => setMode("hangar")} />;
   }
 
   return (
@@ -63,55 +81,108 @@ export default function App() {
         <SpaceshipViewer ref={viewerRef} parts={parts} />
 
         {/* Controls Overlay */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 p-2 bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl">
-          <button
-            onClick={handleGenerate}
-            className="flex items-center gap-2 px-6 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl transition-all font-medium"
-          >
-            <RefreshCw className="w-5 h-5" />
-            <span>Generate New</span>
-          </button>
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-4 p-4 bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl w-[600px] max-w-full">
+          <div className="flex w-full gap-4">
+            <div className="flex-1 flex flex-col gap-1">
+              <label className="text-xs text-gray-400 font-semibold uppercase tracking-wider flex items-center gap-1">
+                <User className="w-3 h-3" /> Pilot Name
+              </label>
+              <input
+                type="text"
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                placeholder="Enter name..."
+                className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white outline-none focus:border-emerald-500 transition-colors"
+                maxLength={16}
+              />
+            </div>
+            <div className="flex-1 flex flex-col gap-1">
+              <label className="text-xs text-gray-400 font-semibold uppercase tracking-wider flex items-center gap-1">
+                <Hash className="w-3 h-3" /> Ship Seed
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={seed}
+                  onChange={handleSeedChange}
+                  placeholder="Enter seed..."
+                  className="flex-1 bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white outline-none focus:border-emerald-500 transition-colors uppercase"
+                  maxLength={12}
+                />
+                <button
+                  onClick={handleGenerate}
+                  className="p-2 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-all"
+                  title="Random Seed"
+                >
+                  <RefreshCw className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          </div>
 
-          <div className="w-px h-8 bg-white/10"></div>
+          <div className="w-full h-px bg-white/10"></div>
 
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-2 px-6 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl transition-all font-medium"
-          >
-            <Download className="w-5 h-5" />
-            <span>Export GLTF</span>
-          </button>
+          <div className="flex items-center gap-4 w-full justify-between">
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl transition-all font-medium text-sm"
+            >
+              <Download className="w-4 h-4" />
+              <span>Export GLTF</span>
+            </button>
 
-          <div className="w-px h-8 bg-white/10"></div>
-
-          <button
-            onClick={() => setMode("game")}
-            className="flex items-center gap-2 px-8 py-3 bg-emerald-500 hover:bg-emerald-400 text-black rounded-xl transition-all font-bold shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)]"
-          >
-            <Rocket className="w-5 h-5" />
-            <span>PLAY</span>
-          </button>
+            <button
+              onClick={() => setMode("game")}
+              disabled={!seed}
+              className="flex-1 flex items-center justify-center gap-2 px-8 py-3 bg-emerald-500 hover:bg-emerald-400 disabled:bg-gray-600 disabled:text-gray-400 text-black rounded-xl transition-all font-bold shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] disabled:shadow-none"
+            >
+              <Rocket className="w-5 h-5" />
+              <span>ENTER SPACE</span>
+            </button>
+          </div>
         </div>
 
         {/* Stats / Info Overlay */}
-        <div className="absolute top-24 left-6 p-4 bg-black/40 backdrop-blur-md border border-white/5 rounded-xl text-xs font-mono text-gray-400 flex flex-col gap-2 pointer-events-none">
+        <div className="absolute top-24 left-6 p-4 bg-black/40 backdrop-blur-md border border-white/5 rounded-xl text-xs font-mono text-gray-400 flex flex-col gap-2 pointer-events-none w-64">
           <div className="flex items-center gap-2 text-white">
             <Settings2 className="w-4 h-4" />
-            <span className="font-semibold">Ship Stats</span>
+            <span className="font-semibold">Ship Characteristics</span>
           </div>
           <div className="w-full h-px bg-white/10 my-1"></div>
-          <div className="flex justify-between gap-8">
-            <span>Parts:</span>
-            <span className="text-emerald-400">{parts.length}</span>
-          </div>
-          <div className="flex justify-between gap-8">
-            <span>Format:</span>
-            <span className="text-emerald-400">GLTF 2.0</span>
-          </div>
-          <div className="flex justify-between gap-8">
-            <span>Ready for:</span>
-            <span className="text-emerald-400">Game Engines</span>
-          </div>
+          {stats && (
+            <>
+              <div className="flex justify-between gap-4">
+                <span>Hull Strength:</span>
+                <span className={stats.maxHealth > 100 ? "text-emerald-400" : "text-yellow-400"}>
+                  {stats.maxHealth}
+                </span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>Top Speed:</span>
+                <span className={stats.speedMultiplier > 1 ? "text-emerald-400" : "text-yellow-400"}>
+                  {(stats.speedMultiplier * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>Agility:</span>
+                <span className={stats.turnSpeedMultiplier > 1 ? "text-emerald-400" : "text-yellow-400"}>
+                  {(stats.turnSpeedMultiplier * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>Firepower:</span>
+                <span className={stats.damageMultiplier > 1 ? "text-emerald-400" : "text-yellow-400"}>
+                  {(stats.damageMultiplier * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>Fire Rate:</span>
+                <span className={stats.fireRateMultiplier > 1 ? "text-emerald-400" : "text-yellow-400"}>
+                  {(stats.fireRateMultiplier * 100).toFixed(0)}%
+                </span>
+              </div>
+            </>
+          )}
         </div>
       </main>
     </div>
