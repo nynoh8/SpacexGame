@@ -12,13 +12,58 @@ import { SpaceshipModel } from "./SpaceshipModel";
 import { Rocket, Trophy } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 import { v4 as uuidv4 } from "uuid";
+import { touchState, MobileControls } from "./MobileControls";
 
-export const activeBullets = new Map<string, { position: THREE.Vector3, velocity: THREE.Vector3, ownerId: string }>();
+export const activeBullets = new Map<string, { position: THREE.Vector3, velocity: THREE.Vector3, ownerId: string, type?: string }>();
+export const planetPositions = new Map<string, { position: THREE.Vector3, radius: number }>();
+export const playerState = { lastMissileTime: 0 };
+
+function getGamepadState() {
+  const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+  const gp = gamepads[0];
+  if (!gp) return {};
+
+  return {
+    pitchUp: gp.axes[1] > 0.2 || gp.buttons[13]?.pressed,
+    pitchDown: gp.axes[1] < -0.2 || gp.buttons[12]?.pressed,
+    yawLeft: gp.axes[0] < -0.2 || gp.buttons[14]?.pressed,
+    yawRight: gp.axes[0] > 0.2 || gp.buttons[15]?.pressed,
+    rollLeft: gp.buttons[4]?.pressed,
+    rollRight: gp.buttons[5]?.pressed,
+    thrust: gp.buttons[7]?.pressed,
+    brake: gp.buttons[6]?.pressed,
+    shoot: gp.buttons[0]?.pressed,
+    missile: gp.buttons[2]?.pressed || gp.buttons[1]?.pressed,
+  };
+}
+
+function useMergedControls() {
+  const [, getKeyboard] = useKeyboardControls();
+  
+  return () => {
+    const kbd = getKeyboard();
+    const gp = getGamepadState();
+    
+    return {
+      pitchUp: kbd.pitchUp || gp.pitchUp || touchState.pitchUp,
+      pitchDown: kbd.pitchDown || gp.pitchDown || touchState.pitchDown,
+      yawLeft: kbd.yawLeft || gp.yawLeft || touchState.yawLeft,
+      yawRight: kbd.yawRight || gp.yawRight || touchState.yawRight,
+      rollLeft: kbd.rollLeft || gp.rollLeft || touchState.rollLeft,
+      rollRight: kbd.rollRight || gp.rollRight || touchState.rollRight,
+      thrust: kbd.thrust || gp.thrust || touchState.thrust,
+      brake: kbd.brake || gp.brake || touchState.brake,
+      shoot: kbd.shoot || gp.shoot || touchState.shoot,
+      missile: kbd.missile || gp.missile || touchState.missile,
+    };
+  };
+}
 
 function Player({
   parts,
   socket,
   localData,
+  remoteData,
   health,
   isDead,
   stats,
@@ -27,13 +72,14 @@ function Player({
   parts: Part[];
   socket: Socket;
   localData: React.MutableRefObject<any>;
+  remoteData: React.MutableRefObject<any>;
   health: number;
   isDead: boolean;
   stats: any;
   playerName: string;
 }) {
   const shipRef = useRef<THREE.Group>(null);
-  const [, get] = useKeyboardControls();
+  const getControls = useMergedControls();
   const velocity = useRef(0);
   const angularVelocity = useRef(new THREE.Vector3(0, 0, 0));
   const lastEmit = useRef(0);
@@ -51,7 +97,7 @@ function Player({
       return;
     }
 
-    const { pitchUp, pitchDown, yawLeft, yawRight, rollLeft, rollRight, thrust, brake, shoot } = get();
+    const { pitchUp, pitchDown, yawLeft, yawRight, rollLeft, rollRight, thrust, brake, shoot, missile } = getControls();
 
     // Stats multipliers
     const speedMult = stats?.speedMultiplier || 1;
@@ -102,6 +148,24 @@ function Player({
         id: uuidv4(),
         position: bulletPos.toArray(),
         velocity: bulletDir.multiplyScalar(300).toArray(), // Fast bullet
+        type: 'normal'
+      });
+    }
+
+    // Missile
+    if (missile && Date.now() - playerState.lastMissileTime > 10000) {
+      playerState.lastMissileTime = Date.now();
+      const bulletPos = shipRef.current.position.clone();
+      const bulletDir = new THREE.Vector3(0, 0, -1).applyQuaternion(
+        shipRef.current.quaternion,
+      );
+      bulletPos.add(bulletDir.clone().multiplyScalar(4));
+
+      socket.emit("shoot", {
+        id: uuidv4(),
+        position: bulletPos.toArray(),
+        velocity: bulletDir.multiplyScalar(150).toArray(), // Slower missile
+        type: 'missile'
       });
     }
 
@@ -110,9 +174,31 @@ function Player({
       if (bullet.ownerId !== socket.id) {
         const dist = shipRef.current!.position.distanceTo(bullet.position);
         if (dist < 4.0) {
-          socket.emit("damage", { targetId: socket.id, attackerId: bullet.ownerId, amount: 20, bulletId: id });
+          const damageAmount = bullet.type === 'missile' ? 60 : 20;
+          socket.emit("damage", { targetId: socket.id, attackerId: bullet.ownerId, amount: damageAmount, bulletId: id });
           activeBullets.delete(id); // Optimistically remove
         }
+      }
+    });
+
+    // Player collision
+    Object.keys(remoteData.current).forEach((playerId) => {
+      if (playerId !== socket.id) {
+        const rData = remoteData.current[playerId];
+        if (!rData || !rData.position) return;
+        const remotePos = new THREE.Vector3().fromArray(rData.position);
+        const dist = shipRef.current!.position.distanceTo(remotePos);
+        if (dist < 4.0) {
+          socket.emit("damage", { targetId: socket.id, attackerId: playerId, amount: 9999, bulletId: "player_collision" });
+        }
+      }
+    });
+
+    // Planet collision
+    planetPositions.forEach((planet) => {
+      const dist = shipRef.current!.position.distanceTo(planet.position);
+      if (dist < planet.radius + 2) { // 2 is roughly the ship radius
+        socket.emit("damage", { targetId: socket.id, attackerId: socket.id, amount: 9999, bulletId: "planet" });
       }
     });
 
@@ -211,7 +297,7 @@ function RemotePlayer({
 
   useFrame(() => {
     const data = remoteData.current[id];
-    if (data) {
+    if (data && data.position && data.quaternion) {
       if (data.health !== health) setHealth(data.health);
       
       if (data.isDead && !isDead) {
@@ -272,9 +358,12 @@ function BulletsManager({ socket }: { socket: Socket }) {
 
   useEffect(() => {
     const onBullet = (data: any) => {
-      const geometry = new THREE.CapsuleGeometry(0.2, 2, 4, 8);
+      const isMissile = data.type === 'missile';
+      const geometry = isMissile 
+        ? new THREE.CapsuleGeometry(0.5, 4, 4, 8) 
+        : new THREE.CapsuleGeometry(0.2, 2, 4, 8);
       geometry.rotateX(Math.PI / 2); // Align with Z axis
-      const material = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
+      const material = new THREE.MeshBasicMaterial({ color: isMissile ? 0xff5500 : 0x00ffcc });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.fromArray(data.position);
 
@@ -292,7 +381,8 @@ function BulletsManager({ socket }: { socket: Socket }) {
       activeBullets.set(data.id, {
         position: mesh.position,
         velocity: vel,
-        ownerId: data.ownerId
+        ownerId: data.ownerId,
+        type: data.type
       });
     };
 
@@ -383,6 +473,9 @@ function CelestialBody({
     }
     if (meshRef.current) {
       meshRef.current.rotation.y += delta * 0.2;
+      const worldPos = new THREE.Vector3();
+      meshRef.current.getWorldPosition(worldPos);
+      planetPositions.set(data.name, { position: worldPos, radius: data.size });
     }
   });
 
@@ -478,7 +571,7 @@ function RadarLogic({
     let html = "";
     players.forEach((p) => {
       const rData = remoteData.current[p.id];
-      if (!rData) return;
+      if (!rData || !rData.position) return;
       const remotePos = new THREE.Vector3().fromArray(rData.position);
       const relativePos = remotePos.clone().sub(localPos);
       relativePos.applyQuaternion(localQuat.clone().invert());
@@ -499,6 +592,37 @@ function RadarLogic({
     radarDOM.innerHTML = html;
   });
   return null;
+}
+
+function MissileCooldownUI() {
+  const [progress, setProgress] = useState(100);
+
+  useEffect(() => {
+    let frame: number;
+    const update = () => {
+      const elapsed = Date.now() - playerState.lastMissileTime;
+      if (elapsed < 10000) {
+        setProgress((elapsed / 10000) * 100);
+      } else {
+        setProgress(100);
+      }
+      frame = requestAnimationFrame(update);
+    };
+    frame = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  return (
+    <div className="mt-4 bg-black/40 backdrop-blur-md p-4 rounded-xl border border-white/10 pointer-events-auto">
+      <p className="text-sm text-gray-300 mb-2">Missile (F/B/MSL)</p>
+      <div className="w-48 h-4 bg-gray-800 rounded-full overflow-hidden border border-white/10">
+        <div 
+          className={`h-full transition-all duration-100 ${progress === 100 ? 'bg-orange-500' : 'bg-gray-500'}`} 
+          style={{ width: `${progress}%` }} 
+        />
+      </div>
+    </div>
+  );
 }
 
 export function Game({ initialSeed, playerName, onExit }: { initialSeed: string; playerName: string; onExit: () => void }) {
@@ -680,7 +804,7 @@ export function Game({ initialSeed, playerName, onExit }: { initialSeed: string;
             speed={1}
           />
 
-          <Player parts={localParts} socket={socket} localData={localData} health={health} isDead={isDead} stats={stats} playerName={playerName} />
+          <Player parts={localParts} socket={socket} localData={localData} remoteData={remoteData} health={health} isDead={isDead} stats={stats} playerName={playerName} />
           {isDead && explosionPos && <Explosion position={explosionPos} />}
           {players.map((p) => (
             <RemotePlayer
@@ -752,7 +876,7 @@ export function Game({ initialSeed, playerName, onExit }: { initialSeed: string;
         </button>
         
         {/* Health Bar */}
-        <div className="mt-4 bg-black/40 backdrop-blur-md p-4 rounded-xl border border-white/10">
+        <div className="mt-4 bg-black/40 backdrop-blur-md p-4 rounded-xl border border-white/10 pointer-events-auto">
           <p className="text-sm text-gray-300 mb-2">Hull Integrity</p>
           <div className="w-48 h-4 bg-gray-800 rounded-full overflow-hidden border border-white/10">
             <div 
@@ -761,6 +885,8 @@ export function Game({ initialSeed, playerName, onExit }: { initialSeed: string;
             />
           </div>
         </div>
+
+        <MissileCooldownUI />
 
         {isDead && (
           <div className="mt-8 text-center text-red-500 font-bold text-2xl animate-pulse">
@@ -807,6 +933,8 @@ export function Game({ initialSeed, playerName, onExit }: { initialSeed: string;
         <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-px bg-white"></div>
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-1 bg-emerald-400 rounded-full"></div>
       </div>
+
+      <MobileControls />
 
       {/* Radar */}
       <div className="absolute bottom-6 right-6 w-32 h-32 bg-emerald-900/20 border-2 border-emerald-500/50 rounded-full backdrop-blur-md overflow-hidden pointer-events-none">

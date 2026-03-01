@@ -80,11 +80,16 @@ async function startServer() {
       const attacker = players.get(data.attackerId);
 
       if (target && target.health > 0 && !target.isDead) {
-        const damageAmount = data.amount * (attacker ? attacker.stats.damageMultiplier : 1);
+        let damageAmount = data.amount;
+        if (attacker && data.bulletId !== "planet" && data.bulletId !== "player_collision") {
+          damageAmount *= attacker.stats.damageMultiplier;
+        }
         target.health -= damageAmount;
         
         io.emit("player:health", { id: target.id, health: target.health });
-        io.emit("bullet:destroy", data.bulletId);
+        if (data.bulletId !== "planet" && data.bulletId !== "player_collision") {
+          io.emit("bullet:destroy", data.bulletId);
+        }
 
         if (target.health <= 0) {
           target.health = 0;
