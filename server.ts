@@ -16,16 +16,133 @@ async function startServer() {
 
   const players = new Map();
   const seedOwners = new Map(); // seed -> socket.id
+  const npcs = new Map();
+
+  // Match State
+  let matchTime = 120; // 2 minutes
+  let matchActive = true;
+  let matchResults: any[] = [];
 
   const getLeaderboard = () => {
     const lb = Array.from(players.values()).map((p) => ({
       id: p.id,
       name: p.name,
       shipsOwned: p.ownedSeeds.length,
+      kills: p.matchKills || 0,
     }));
-    lb.sort((a, b) => b.shipsOwned - a.shipsOwned);
+    lb.sort((a, b) => b.shipsOwned - a.shipsOwned || b.kills - a.kills);
     return lb.slice(0, 10);
   };
+
+  // NPC Logic
+  const spawnNPC = (id: string) => {
+    const seed = Math.random().toString(36).substring(2, 10).toUpperCase();
+    const stats = getShipStats(seed);
+    const npc = {
+      id,
+      name: `Drone-${id.substring(0, 4)}`,
+      activeSeed: seed,
+      stats: stats,
+      position: [(Math.random() - 0.5) * 2000, (Math.random() - 0.5) * 500, -3000 + (Math.random() - 0.5) * 2000],
+      quaternion: [0, 0, 0, 1],
+      health: stats.maxHealth * 0.5, // NPCs are weaker
+      isDead: false,
+      isNPC: true,
+      lastShoot: 0,
+      velocity: (Math.random() * 50) + 50,
+      turnSpeed: (Math.random() * 0.5) + 0.2,
+    };
+    npcs.set(id, npc);
+    io.emit("player:join", npc);
+  };
+
+  // Initial NPCs
+  for (let i = 0; i < 5; i++) {
+    spawnNPC(`npc-${i}`);
+  }
+
+  // NPC Update Loop
+  setInterval(() => {
+    if (!matchActive) return;
+    npcs.forEach((npc, id) => {
+      if (npc.isDead) return;
+
+      // Simple AI: Move forward and rotate slowly
+      // In a real server, we'd do full 3D math, but for now we'll just simulate movement
+      // and broadcast it.
+      const speed = npc.velocity * 0.1;
+      // Just drift them for now
+      npc.position[0] += (Math.random() - 0.5) * speed;
+      npc.position[1] += (Math.random() - 0.5) * speed;
+      npc.position[2] += (Math.random() - 0.5) * speed;
+
+      io.emit("player:move", {
+        id: npc.id,
+        position: npc.position,
+        quaternion: npc.quaternion,
+      });
+
+      // Occasional shooting
+      if (Date.now() - npc.lastShoot > 3000 + Math.random() * 5000) {
+        npc.lastShoot = Date.now();
+        const bulletId = `bullet-npc-${id}-${Date.now()}`;
+        // Shoot forward (simplified)
+        io.emit("bullet:new", {
+          id: bulletId,
+          ownerId: npc.id,
+          position: npc.position,
+          velocity: [0, 0, 200], // Simplified velocity
+          type: "normal"
+        });
+      }
+    });
+  }, 100);
+
+  // Match Timer Loop
+  setInterval(() => {
+    if (matchTime > 0) {
+      matchTime--;
+      io.emit("match:timer", matchTime);
+    } else if (matchActive) {
+      matchActive = false;
+      // Match End
+      matchResults = Array.from(players.values()).map(p => ({
+        id: p.id,
+        name: p.name,
+        shipsOwned: p.ownedSeeds.length,
+        kills: p.matchKills || 0,
+      })).sort((a, b) => b.shipsOwned - a.shipsOwned);
+
+      io.emit("match:end", matchResults);
+
+      // Restart after 10 seconds
+      setTimeout(() => {
+        matchTime = 120;
+        matchActive = true;
+        
+        // Reset players
+        players.forEach(p => {
+          p.matchKills = 0;
+          p.ownedSeeds = [p.activeSeed];
+          const stats = getShipStats(p.activeSeed);
+          p.health = stats.maxHealth;
+          p.isDead = false;
+          p.position = [(Math.random() - 0.5) * 2000, (Math.random() - 0.5) * 500, -3000 + (Math.random() - 0.5) * 2000];
+          p.quaternion = [0, 0, 0, 1];
+        });
+
+        // Reset NPCs
+        npcs.clear();
+        for (let i = 0; i < 5; i++) {
+          spawnNPC(`npc-${i}`);
+        }
+
+        io.emit("match:start");
+        io.emit("init", [...Array.from(players.values()), ...Array.from(npcs.values())]);
+        io.emit("leaderboard:update", getLeaderboard());
+      }, 10000);
+    }
+  }, 1000);
 
   io.on("connection", (socket) => {
     console.log("Player connected:", socket.id);
@@ -49,13 +166,15 @@ async function startServer() {
         quaternion: data.quaternion || [0, 0, 0, 1],
         health: stats.maxHealth,
         isDead: false,
+        matchKills: 0,
       };
       players.set(socket.id, newPlayer);
       
       socket.emit("join_success", newPlayer);
-      socket.emit("init", Array.from(players.values()));
+      socket.emit("init", [...Array.from(players.values()), ...Array.from(npcs.values())]);
       socket.broadcast.emit("player:join", newPlayer);
       io.emit("leaderboard:update", getLeaderboard());
+      socket.emit("match:timer", matchTime);
     });
 
     socket.on("move", (data) => {
@@ -76,8 +195,8 @@ async function startServer() {
     });
 
     socket.on("damage", (data) => {
-      const target = players.get(data.targetId);
-      const attacker = players.get(data.attackerId);
+      const target = players.get(data.targetId) || npcs.get(data.targetId);
+      const attacker = players.get(data.attackerId) || npcs.get(data.attackerId);
 
       if (target && target.health > 0 && !target.isDead) {
         let damageAmount = data.amount;
@@ -95,8 +214,13 @@ async function startServer() {
           target.health = 0;
           target.isDead = true;
           
-          // Transfer seeds
-          if (attacker && attacker.id !== target.id) {
+          // Track kills
+          if (attacker && !attacker.isNPC && attacker.id !== target.id) {
+            attacker.matchKills = (attacker.matchKills || 0) + 1;
+          }
+
+          // Transfer seeds (only between real players)
+          if (attacker && !attacker.isNPC && !target.isNPC && attacker.id !== target.id) {
             target.ownedSeeds.forEach((seed: string) => {
               if (!attacker.ownedSeeds.includes(seed)) {
                 attacker.ownedSeeds.push(seed);
@@ -109,9 +233,13 @@ async function startServer() {
 
           io.emit("player:die", { id: target.id, attackerId: data.attackerId });
           
-          // Respawn after 3 seconds
+          // Respawn logic
           setTimeout(() => {
-            if (players.has(target.id)) {
+            if (target.isNPC) {
+              // NPC respawn
+              npcs.delete(target.id);
+              spawnNPC(target.id);
+            } else if (players.has(target.id)) {
               const p = players.get(target.id);
               
               // Generate new random seed for respawn

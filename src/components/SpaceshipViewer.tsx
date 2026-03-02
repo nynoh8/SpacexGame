@@ -49,17 +49,18 @@ export const SpaceshipViewer = forwardRef<
   }));
 
   return (
-    <div className="absolute inset-0 bg-[#0a0a0a]">
+    <div className="absolute inset-0 bg-[#1e293b]">
       <Canvas camera={{ position: [15, 10, 15], fov: 45 }} shadows>
-        <color attach="background" args={["#0a0a0a"]} />
-        <ambientLight intensity={0.5} />
+        <color attach="background" args={["#1e293b"]} />
+        <ambientLight intensity={0.8} color="#e0e5ff" />
         <directionalLight
           position={[10, 20, 10]}
           intensity={1.5}
+          color="#fff5e6"
           castShadow
           shadow-mapSize={[2048, 2048]}
         />
-        <pointLight position={[-10, -10, -10]} intensity={0.5} />
+        <pointLight position={[-10, -10, -10]} intensity={0.8} color="#dbeafe" />
 
         <SpaceshipModel ref={groupRef} parts={parts} />
 

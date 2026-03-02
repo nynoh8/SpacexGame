@@ -11,15 +11,29 @@ export interface Part {
   color: string;
 }
 
-const baseColors = ["#2a2a2a", "#3b3b3b", "#4c4c4c", "#1a1a1a"];
+const baseColors = [
+  "#1e293b", // dark slate
+  "#334155", // slate
+  "#1e3a8a", // dark blue
+  "#312e81", // dark indigo
+  "#4c1d95", // dark violet
+  "#701a75", // dark fuchsia
+  "#831843", // dark pink
+  "#7f1d1d", // dark red
+  "#7c2d12", // dark orange
+  "#713f12", // dark yellow
+  "#14532d", // dark green
+  "#064e3b", // dark emerald
+  "#164e63", // dark cyan
+];
 const accentColors = [
-  "#ff3333",
-  "#3366ff",
-  "#ffcc00",
-  "#00cc66",
-  "#ff9900",
-  "#cc00ff",
-  "#ffffff",
+  "#3b82f6", // blue
+  "#eab308", // yellow
+  "#ef4444", // red
+  "#f97316", // orange
+  "#22c55e", // green
+  "#a855f7", // violet
+  "#64748b", // slate
 ];
 
 function randomChoice<T>(arr: T[], random: () => number): T {

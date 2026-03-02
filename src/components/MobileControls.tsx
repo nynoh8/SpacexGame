@@ -61,7 +61,7 @@ export function MobileControls() {
       <div className="absolute bottom-8 right-8 pointer-events-auto flex flex-col items-end gap-4">
         <div className="flex gap-4">
           <Button action="brake" label="BRK" className="w-16 h-16 bg-red-500/20 active:bg-red-500/40 border-red-500/50" />
-          <Button action="thrust" label="BOOST" className="w-16 h-16 bg-blue-500/20 active:bg-blue-500/40 border-blue-500/50" />
+          <Button action="thrust" label="Acelerar" className="w-16 h-16 bg-blue-500/20 active:bg-blue-500/40 border-blue-500/50 text-xs" />
         </div>
         <div className="flex gap-4">
           <Button action="missile" label="MSL" className="w-16 h-16 bg-orange-500/20 active:bg-orange-500/40 border-orange-500/50" />
