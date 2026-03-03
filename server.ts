@@ -403,27 +403,31 @@ async function startServer() {
               room.npcs.delete(target.id);
               room.spawnNPC(target.id);
             } else if (room.players.has(target.id)) {
-              const p = room.players.get(target.id);
-              
-              const newSeed = Math.random().toString(36).substring(2, 10).toUpperCase();
-              room.seedOwners.set(newSeed, p.id);
-              const newStats = getShipStats(newSeed);
-              
-              p.activeSeed = newSeed;
-              p.ownedSeeds = [newSeed];
-              p.stats = newStats;
-              p.health = newStats.maxHealth;
-              p.isDead = false;
-              p.position = [(Math.random() - 0.5) * 500, 0, -2800 + (Math.random() - 0.5) * 500];
-              
-              io.to(currentRoomId).emit("player:respawn", { 
-                id: p.id, 
-                position: p.position, 
-                health: p.health,
-                activeSeed: p.activeSeed,
-                stats: p.stats
-              });
-              io.to(currentRoomId).emit("leaderboard:update", room.getLeaderboard());
+              if (room.isTraining) {
+                io.to(target.id).emit("training:failed");
+              } else {
+                const p = room.players.get(target.id);
+                
+                const newSeed = Math.random().toString(36).substring(2, 10).toUpperCase();
+                room.seedOwners.set(newSeed, p.id);
+                const newStats = getShipStats(newSeed);
+                
+                p.activeSeed = newSeed;
+                p.ownedSeeds = [newSeed];
+                p.stats = newStats;
+                p.health = newStats.maxHealth;
+                p.isDead = false;
+                p.position = [(Math.random() - 0.5) * 500, 0, -2800 + (Math.random() - 0.5) * 500];
+                
+                io.to(currentRoomId).emit("player:respawn", { 
+                  id: p.id, 
+                  position: p.position, 
+                  health: p.health,
+                  activeSeed: p.activeSeed,
+                  stats: p.stats
+                });
+                io.to(currentRoomId).emit("leaderboard:update", room.getLeaderboard());
+              }
             }
           }, 3000);
         }

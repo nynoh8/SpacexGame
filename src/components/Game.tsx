@@ -138,6 +138,11 @@ export function Game({ initialSeed, playerName, onExit, mode }: { initialSeed: s
       }
     });
 
+    newSocket.on("training:failed", () => {
+      alert("Training Failed! Your ship was destroyed.");
+      onExit();
+    });
+
     newSocket.on("player:respawn", (data: any) => {
       if (data.id === newSocket.id) {
         setIsDead(false);
@@ -259,6 +264,7 @@ export function Game({ initialSeed, playerName, onExit, mode }: { initialSeed: s
         onExit={onExit}
         matchTime={matchTime}
         matchResults={matchResults}
+        mode={mode}
       />
 
       {/* Crosshair */}

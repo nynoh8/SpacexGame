@@ -43,7 +43,8 @@ export function GameUI({
   socketId,
   onExit,
   matchTime,
-  matchResults
+  matchResults,
+  mode
 }: {
   showUI: boolean;
   setShowUI: (v: boolean) => void;
@@ -55,6 +56,7 @@ export function GameUI({
   onExit: () => void;
   matchTime: number;
   matchResults: any[] | null;
+  mode: "training" | "multiplayer";
 }) {
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -113,26 +115,30 @@ export function GameUI({
 
       <button
         onClick={() => setShowUI(!showUI)}
-        className="pointer-events-auto mt-4 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg backdrop-blur-md transition-all text-xs border border-white/10"
+        className="pointer-events-auto mt-4 mb-4 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg backdrop-blur-md transition-all text-xs border border-white/10"
       >
-        {showUI ? "Minimize UI" : "Show UI"}
+        {showUI ? "Hide UI" : "Show UI"}
       </button>
 
-      <div className="mt-4 bg-black/40 backdrop-blur-md p-4 rounded-xl border border-white/10 pointer-events-auto">
-        <p className="text-sm text-gray-300 mb-2">Hull Integrity</p>
-        <div className="w-48 h-4 bg-gray-800 rounded-full overflow-hidden border border-white/10">
-          <div
-            className={`h-full transition-all duration-300 ${health > 50 ? 'bg-emerald-500' : health > 20 ? 'bg-yellow-500' : 'bg-red-500'}`}
-            style={{ width: `${health}%` }}
-          />
-        </div>
-      </div>
+      {showUI && (
+        <>
+          <div className="bg-black/40 backdrop-blur-md p-4 rounded-xl border border-white/10 pointer-events-auto">
+            <p className="text-sm text-gray-300 mb-2">Hull Integrity</p>
+            <div className="w-48 h-4 bg-gray-800 rounded-full overflow-hidden border border-white/10">
+              <div
+                className={`h-full transition-all duration-300 ${health > 50 ? 'bg-emerald-500' : health > 20 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                style={{ width: `${health}%` }}
+              />
+            </div>
+          </div>
 
-      <MissileCooldownUI />
+          <MissileCooldownUI />
+        </>
+      )}
 
       {isDead && (
         <div className="mt-8 text-center text-red-500 font-bold text-2xl animate-pulse">
-          SHIP DESTROYED - RESPAWNING...
+          {mode === "training" ? "SHIP DESTROYED - TRAINING FAILED" : "SHIP DESTROYED - RESPAWNING..."}
         </div>
       )}
 

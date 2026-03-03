@@ -174,7 +174,7 @@ export function Player({
     Object.keys(remoteData.current).forEach((playerId) => {
       if (playerId !== socket.id) {
         const rData = remoteData.current[playerId];
-        if (!rData || !rData.position) return;
+        if (!rData || !rData.position || rData.isDead) return;
         const remotePos = new THREE.Vector3().fromArray(rData.position);
         const dist = shipRef.current!.position.distanceTo(remotePos);
         if (dist < 4.0) {
