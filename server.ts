@@ -23,6 +23,7 @@ async function startServer() {
     matchTime = 120;
     matchActive = true;
     matchResults: any[] = [];
+    matchTimeout: NodeJS.Timeout | null = null;
 
     constructor(id: string, isTraining: boolean) {
       this.id = id;
@@ -32,6 +33,40 @@ async function startServer() {
           this.spawnNPC(`npc-${i}`);
         }
       }
+    }
+
+    resetMatchTime() {
+      this.matchTime = 120;
+      if (this.matchTimeout) {
+        clearTimeout(this.matchTimeout);
+        this.matchTimeout = null;
+      }
+      
+      if (!this.matchActive) {
+        this.matchActive = true;
+        this.players.forEach(p => {
+          p.matchKills = 0;
+          p.ownedSeeds = [p.activeSeed];
+          const stats = getShipStats(p.activeSeed);
+          p.health = stats.maxHealth;
+          p.isDead = false;
+          p.position = [(Math.random() - 0.5) * 2000, (Math.random() - 0.5) * 500, -3000 + (Math.random() - 0.5) * 2000];
+          p.quaternion = [0, 0, 0, 1];
+        });
+
+        this.npcs.clear();
+        if (this.isTraining) {
+          for (let i = 0; i < 5; i++) {
+            this.spawnNPC(`npc-${i}`);
+          }
+        }
+
+        io.to(this.id).emit("init", [...Array.from(this.players.values()), ...Array.from(this.npcs.values())]);
+        io.to(this.id).emit("leaderboard:update", this.getLeaderboard());
+      }
+      
+      io.to(this.id).emit("match:timer", this.matchTime);
+      io.to(this.id).emit("match:start");
     }
 
     spawnNPC(id: string) {
@@ -111,9 +146,10 @@ async function startServer() {
 
         io.to(this.id).emit("match:end", this.matchResults);
 
-        setTimeout(() => {
+        this.matchTimeout = setTimeout(() => {
           this.matchTime = 120;
           this.matchActive = true;
+          this.matchTimeout = null;
           
           this.players.forEach(p => {
             p.matchKills = 0;
@@ -172,6 +208,7 @@ async function startServer() {
         rooms.set(roomId, new GameRoom(roomId, isTraining));
       }
       const room = rooms.get(roomId)!;
+      room.resetMatchTime();
 
       if (room.seedOwners.has(data.seed) && room.seedOwners.get(data.seed) !== socket.id) {
         socket.emit("join_error", "Seed already owned by another player!");
