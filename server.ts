@@ -4,9 +4,13 @@ import { Server } from "socket.io";
 import http from "http";
 import cookieParser from "cookie-parser";
 import { OAuth2Client } from "google-auth-library";
+import { v4 as uuidv4 } from "uuid";
 import { getShipStats } from "./src/utils/shipStats";
+import { pool, initDB } from "./src/db";
 
 async function startServer() {
+  await initDB();
+  
   const app = express();
   app.use(cookieParser());
   app.use(express.json());
@@ -295,7 +299,7 @@ async function startServer() {
     console.log("Player connected:", socket.id);
     let currentRoomId: string | null = null;
 
-    socket.on("join", (data) => {
+    socket.on("join", async (data) => {
       const isTraining = data.mode === "training";
       const roomId = isTraining ? `training-${socket.id}` : "global";
       currentRoomId = roomId;
@@ -316,8 +320,31 @@ async function startServer() {
       room.seedOwners.set(data.seed, socket.id);
       const stats = getShipStats(data.seed);
 
+      let dbId = uuidv4();
+      let shipDbId = uuidv4();
+
+      if (pool) {
+        try {
+          // Tenta inserir o jogador ou atualizar se já existir
+          const res = await pool.query(
+            'INSERT INTO jogadores (id, nickname) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING RETURNING id',
+            [dbId, data.name || `Pilot-${socket.id.substring(0, 4)}`]
+          );
+          
+          // Insere a nave associada a este jogador
+          await pool.query(
+            'INSERT INTO naves (id, owner_id, seed, vida, posicao_x, posicao_y, posicao_z) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+            [shipDbId, dbId, data.seed, stats.maxHealth, data.position ? data.position[0] : 0, data.position ? data.position[1] : 0, data.position ? data.position[2] : -2800]
+          );
+        } catch (err) {
+          console.error("Erro ao inserir no banco:", err);
+        }
+      }
+
       const newPlayer = {
         id: socket.id,
+        dbId: dbId,
+        shipDbId: shipDbId,
         name: data.name || `Pilot-${socket.id.substring(0, 4)}`,
         activeSeed: data.seed,
         ownedSeeds: [data.seed],
@@ -357,7 +384,7 @@ async function startServer() {
       io.to(currentRoomId).emit("bullet:new", { ...data, ownerId: socket.id });
     });
 
-    socket.on("damage", (data) => {
+    socket.on("damage", async (data) => {
       if (!currentRoomId) return;
       const room = rooms.get(currentRoomId);
       if (!room) return;
@@ -386,6 +413,26 @@ async function startServer() {
           }
 
           if (attacker && !attacker.isNPC && !target.isNPC && attacker.id !== target.id) {
+            // Lógica de captura de nave segura com transação no banco (se configurado)
+            if (pool) {
+              const client = await pool.connect();
+              try {
+                await client.query('BEGIN');
+                // Bloqueia a linha da nave para evitar race condition (SELECT ... FOR UPDATE)
+                const res = await client.query('SELECT * FROM naves WHERE seed = $1 FOR UPDATE', [target.activeSeed]);
+                if (res.rows.length > 0) {
+                  // Atualiza o dono da nave e restaura a vida
+                  await client.query('UPDATE naves SET owner_id = $1, vida = $2 WHERE seed = $3', [attacker.dbId, target.stats.maxHealth, target.activeSeed]);
+                }
+                await client.query('COMMIT');
+              } catch (err) {
+                await client.query('ROLLBACK');
+                console.error('Erro na transação de captura:', err);
+              } finally {
+                client.release();
+              }
+            }
+
             target.ownedSeeds.forEach((seed: string) => {
               if (!attacker.ownedSeeds.includes(seed)) {
                 attacker.ownedSeeds.push(seed);
@@ -398,7 +445,7 @@ async function startServer() {
 
           io.to(currentRoomId).emit("player:die", { id: target.id, attackerId: data.attackerId });
           
-          setTimeout(() => {
+          setTimeout(async () => {
             if (target.isNPC) {
               room.npcs.delete(target.id);
               room.spawnNPC(target.id);
@@ -419,6 +466,19 @@ async function startServer() {
                 p.isDead = false;
                 p.position = [(Math.random() - 0.5) * 500, 0, -2800 + (Math.random() - 0.5) * 500];
                 
+                if (pool) {
+                  try {
+                    const newShipDbId = uuidv4();
+                    p.shipDbId = newShipDbId;
+                    await pool.query(
+                      'INSERT INTO naves (id, owner_id, seed, vida, posicao_x, posicao_y, posicao_z) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+                      [newShipDbId, p.dbId, newSeed, newStats.maxHealth, p.position[0], p.position[1], p.position[2]]
+                    );
+                  } catch(e) {
+                    console.error("Erro ao criar nova nave no banco:", e);
+                  }
+                }
+
                 io.to(currentRoomId).emit("player:respawn", { 
                   id: p.id, 
                   position: p.position, 
