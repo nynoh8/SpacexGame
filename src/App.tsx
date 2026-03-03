@@ -4,6 +4,9 @@ import {
   SpaceshipViewerRef,
 } from "./components/SpaceshipViewer";
 import { Game } from "./components/Game";
+import { GameScene } from "./components/GameScene";
+import { HUD } from "./components/HUD";
+import { globalGameManager } from "./core/GameManager";
 import { generateSpaceship, Part } from "./utils/spaceshipGenerator";
 import { getShipStats } from "./utils/shipStats";
 import {
@@ -15,11 +18,13 @@ import {
   Rocket,
   Hash,
   User,
+  Swords,
+  Target
 } from "lucide-react";
 
 export default function App() {
   const [parts, setParts] = useState<Part[]>([]);
-  const [mode, setMode] = useState<"hangar" | "game">("hangar");
+  const [mode, setMode] = useState<"hangar" | "training" | "multiplayer">("hangar");
   const [seed, setSeed] = useState("");
   const [playerName, setPlayerName] = useState("");
   const [stats, setStats] = useState<any>(null);
@@ -27,6 +32,10 @@ export default function App() {
 
   useEffect(() => {
     handleGenerate();
+    globalGameManager.init();
+    return () => {
+      globalGameManager.loop.stop();
+    };
   }, []);
 
   const handleGenerate = () => {
@@ -51,8 +60,12 @@ export default function App() {
     }
   };
 
-  if (mode === "game") {
-    return <Game initialSeed={seed} playerName={playerName} onExit={() => setMode("hangar")} />;
+  const startTraining = () => {
+    setMode("training");
+  };
+
+  if (mode === "multiplayer" || mode === "training") {
+    return <Game initialSeed={seed} playerName={playerName} onExit={() => setMode("hangar")} mode={mode} />;
   }
 
   return (
@@ -64,15 +77,6 @@ export default function App() {
             <Box className="w-5 h-5 text-emerald-400" />
           </div>
           <h1 className="text-xl font-semibold tracking-tight">AeroForge 3D</h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setMode("game")}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 rounded-lg transition-colors font-medium border border-emerald-500/30"
-          >
-            <Rocket className="w-4 h-4" />
-            <span>Launch Game</span>
-          </button>
         </div>
       </header>
 
@@ -131,14 +135,25 @@ export default function App() {
               <span>Export GLTF</span>
             </button>
 
-            <button
-              onClick={() => setMode("game")}
-              disabled={!seed}
-              className="flex-1 flex items-center justify-center gap-2 px-8 py-3 bg-emerald-500 hover:bg-emerald-400 disabled:bg-gray-600 disabled:text-gray-400 text-black rounded-xl transition-all font-bold shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] disabled:shadow-none"
-            >
-              <Rocket className="w-5 h-5" />
-              <span>ENTER SPACE</span>
-            </button>
+            <div className="flex gap-2 flex-1">
+              <button
+                onClick={startTraining}
+                disabled={!seed}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 disabled:text-gray-400 text-white rounded-xl transition-all font-bold shadow-[0_0_15px_rgba(37,99,235,0.3)] hover:shadow-[0_0_25px_rgba(37,99,235,0.5)] disabled:shadow-none"
+              >
+                <Target className="w-5 h-5" />
+                <span>TRAINING</span>
+              </button>
+
+              <button
+                onClick={() => setMode("multiplayer")}
+                disabled={!seed}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-600 disabled:text-gray-400 text-white rounded-xl transition-all font-bold shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] disabled:shadow-none"
+              >
+                <Swords className="w-5 h-5" />
+                <span>MULTIPLAYER</span>
+              </button>
+            </div>
           </div>
         </div>
 

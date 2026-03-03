@@ -1,6 +1,8 @@
 import { GameLoop } from "./GameLoop";
 import { GameStateMachine } from "./state/GameStateMachine";
 import { globalEventBus } from "./events/EventBus";
+import { MainMenuState } from "./state/MainMenuState";
+import { PlayingState } from "./state/PlayingState";
 
 export class GameManager {
   public loop: GameLoop;
@@ -17,10 +19,12 @@ export class GameManager {
 
   public init(): void {
     console.log("[GameManager] Initialized.");
-    // In the future, we will register states here:
-    // this.stateMachine.addState(new MainMenuState());
-    // this.stateMachine.addState(new PlayingState());
-    // this.stateMachine.changeState("MainMenu");
+    this.stateMachine.addState(new MainMenuState());
+    this.stateMachine.addState(new PlayingState());
+    
+    // Start the game loop and enter the main menu
+    this.loop.start();
+    this.stateMachine.changeState("MainMenu");
   }
 }
 

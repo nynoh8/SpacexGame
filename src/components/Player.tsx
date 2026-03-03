@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { Html, useKeyboardControls } from "@react-three/drei";
+import { useKeyboardControls } from "@react-three/drei";
 import { Socket } from "socket.io-client";
 import { v4 as uuidv4 } from "uuid";
 import { Part } from "../utils/spaceshipGenerator";
@@ -221,13 +221,6 @@ export function Player({
   return (
     <group ref={shipRef}>
       <SpaceshipModel parts={parts} />
-      <Html center position={[0, 4, 0]}>
-        <div className="text-emerald-400 font-bold text-xs pointer-events-none whitespace-nowrap bg-black/50 px-2 py-1 rounded border border-emerald-500/30 flex flex-col items-center gap-1">
-          <div className="w-16 h-1.5 bg-gray-800 rounded-full overflow-hidden">
-            <div className="h-full bg-emerald-500" style={{ width: `${health}%` }} />
-          </div>
-        </div>
-      </Html>
       <pointLight
         position={[0, 0, 5]}
         intensity={2}

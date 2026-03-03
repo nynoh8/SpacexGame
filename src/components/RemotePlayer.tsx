@@ -1,7 +1,6 @@
 import React, { useRef, useState, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { Html } from "@react-three/drei";
 import { generateSpaceship } from "../utils/spaceshipGenerator";
 import { SpaceshipModel } from "./SpaceshipModel";
 
@@ -72,13 +71,6 @@ export function RemotePlayer({
   return (
     <group ref={ref}>
       <SpaceshipModel parts={parts} />
-      <Html center position={[0, 4, 0]}>
-        <div className="text-red-400 font-bold text-xs pointer-events-none whitespace-nowrap bg-black/50 px-2 py-1 rounded border border-red-500/30 flex flex-col items-center gap-1">
-          <div className="w-16 h-1.5 bg-gray-800 rounded-full overflow-hidden">
-            <div className="h-full bg-red-500" style={{ width: `${health}%` }} />
-          </div>
-        </div>
-      </Html>
       {/* Top light for visibility */}
       <pointLight
         position={[0, 8, 0]}

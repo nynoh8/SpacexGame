@@ -14,146 +14,171 @@ async function startServer() {
   });
   const PORT = 3000;
 
-  const players = new Map();
-  const seedOwners = new Map(); // seed -> socket.id
-  const npcs = new Map();
+  class GameRoom {
+    id: string;
+    isTraining: boolean;
+    players = new Map();
+    seedOwners = new Map();
+    npcs = new Map();
+    matchTime = 120;
+    matchActive = true;
+    matchResults: any[] = [];
 
-  // Match State
-  let matchTime = 120; // 2 minutes
-  let matchActive = true;
-  let matchResults: any[] = [];
-
-  const getLeaderboard = () => {
-    const lb = Array.from(players.values()).map((p) => ({
-      id: p.id,
-      name: p.name,
-      shipsOwned: p.ownedSeeds.length,
-      kills: p.matchKills || 0,
-    }));
-    lb.sort((a, b) => b.shipsOwned - a.shipsOwned || b.kills - a.kills);
-    return lb.slice(0, 10);
-  };
-
-  // NPC Logic
-  const spawnNPC = (id: string) => {
-    const seed = Math.random().toString(36).substring(2, 10).toUpperCase();
-    const stats = getShipStats(seed);
-    const npc = {
-      id,
-      name: `Drone-${id.substring(0, 4)}`,
-      activeSeed: seed,
-      stats: stats,
-      position: [(Math.random() - 0.5) * 2000, (Math.random() - 0.5) * 500, -3000 + (Math.random() - 0.5) * 2000],
-      quaternion: [0, 0, 0, 1],
-      health: stats.maxHealth * 0.5, // NPCs are weaker
-      isDead: false,
-      isNPC: true,
-      lastShoot: 0,
-      velocity: (Math.random() * 50) + 50,
-      turnSpeed: (Math.random() * 0.5) + 0.2,
-    };
-    npcs.set(id, npc);
-    io.emit("player:join", npc);
-  };
-
-  // Initial NPCs
-  for (let i = 0; i < 5; i++) {
-    spawnNPC(`npc-${i}`);
-  }
-
-  // NPC Update Loop
-  setInterval(() => {
-    if (!matchActive) return;
-    npcs.forEach((npc, id) => {
-      if (npc.isDead) return;
-
-      // Simple AI: Move forward and rotate slowly
-      // In a real server, we'd do full 3D math, but for now we'll just simulate movement
-      // and broadcast it.
-      const speed = npc.velocity * 0.1;
-      // Just drift them for now
-      npc.position[0] += (Math.random() - 0.5) * speed;
-      npc.position[1] += (Math.random() - 0.5) * speed;
-      npc.position[2] += (Math.random() - 0.5) * speed;
-
-      io.emit("player:move", {
-        id: npc.id,
-        position: npc.position,
-        quaternion: npc.quaternion,
-      });
-
-      // Occasional shooting
-      if (Date.now() - npc.lastShoot > 3000 + Math.random() * 5000) {
-        npc.lastShoot = Date.now();
-        const bulletId = `bullet-npc-${id}-${Date.now()}`;
-        // Shoot forward (simplified)
-        io.emit("bullet:new", {
-          id: bulletId,
-          ownerId: npc.id,
-          position: npc.position,
-          velocity: [0, 0, 200], // Simplified velocity
-          type: "normal"
-        });
+    constructor(id: string, isTraining: boolean) {
+      this.id = id;
+      this.isTraining = isTraining;
+      if (this.isTraining) {
+        for (let i = 0; i < 5; i++) {
+          this.spawnNPC(`npc-${i}`);
+        }
       }
-    });
-  }, 100);
+    }
 
-  // Match Timer Loop
-  setInterval(() => {
-    if (matchTime > 0) {
-      matchTime--;
-      io.emit("match:timer", matchTime);
-    } else if (matchActive) {
-      matchActive = false;
-      // Match End
-      matchResults = Array.from(players.values()).map(p => ({
+    spawnNPC(id: string) {
+      const seed = Math.random().toString(36).substring(2, 10).toUpperCase();
+      const stats = getShipStats(seed);
+      const npc = {
+        id,
+        name: `Drone-${id.substring(0, 4)}`,
+        activeSeed: seed,
+        stats: stats,
+        position: [(Math.random() - 0.5) * 2000, (Math.random() - 0.5) * 500, -3000 + (Math.random() - 0.5) * 2000],
+        quaternion: [0, 0, 0, 1],
+        health: stats.maxHealth * 0.5,
+        isDead: false,
+        isNPC: true,
+        lastShoot: 0,
+        velocity: (Math.random() * 50) + 50,
+        turnSpeed: (Math.random() * 0.5) + 0.2,
+      };
+      this.npcs.set(id, npc);
+      io.to(this.id).emit("player:join", npc);
+    }
+
+    getLeaderboard() {
+      const lb = Array.from(this.players.values()).map((p) => ({
         id: p.id,
         name: p.name,
         shipsOwned: p.ownedSeeds.length,
         kills: p.matchKills || 0,
-      })).sort((a, b) => b.shipsOwned - a.shipsOwned);
+      }));
+      lb.sort((a, b) => b.shipsOwned - a.shipsOwned || b.kills - a.kills);
+      return lb.slice(0, 10);
+    }
+    
+    updateNPCs() {
+      if (!this.matchActive) return;
+      this.npcs.forEach((npc, id) => {
+        if (npc.isDead) return;
 
-      io.emit("match:end", matchResults);
+        const speed = npc.velocity * 0.1;
+        npc.position[0] += (Math.random() - 0.5) * speed;
+        npc.position[1] += (Math.random() - 0.5) * speed;
+        npc.position[2] += (Math.random() - 0.5) * speed;
 
-      // Restart after 10 seconds
-      setTimeout(() => {
-        matchTime = 120;
-        matchActive = true;
-        
-        // Reset players
-        players.forEach(p => {
-          p.matchKills = 0;
-          p.ownedSeeds = [p.activeSeed];
-          const stats = getShipStats(p.activeSeed);
-          p.health = stats.maxHealth;
-          p.isDead = false;
-          p.position = [(Math.random() - 0.5) * 2000, (Math.random() - 0.5) * 500, -3000 + (Math.random() - 0.5) * 2000];
-          p.quaternion = [0, 0, 0, 1];
+        io.to(this.id).emit("player:move", {
+          id: npc.id,
+          position: npc.position,
+          quaternion: npc.quaternion,
         });
 
-        // Reset NPCs
-        npcs.clear();
-        for (let i = 0; i < 5; i++) {
-          spawnNPC(`npc-${i}`);
+        if (Date.now() - npc.lastShoot > 3000 + Math.random() * 5000) {
+          npc.lastShoot = Date.now();
+          const bulletId = `bullet-npc-${id}-${Date.now()}`;
+          io.to(this.id).emit("bullet:new", {
+            id: bulletId,
+            ownerId: npc.id,
+            position: npc.position,
+            velocity: [0, 0, 200],
+            type: "normal"
+          });
         }
-
-        io.emit("match:start");
-        io.emit("init", [...Array.from(players.values()), ...Array.from(npcs.values())]);
-        io.emit("leaderboard:update", getLeaderboard());
-      }, 10000);
+      });
     }
+
+    updateTimer() {
+      if (this.matchTime > 0) {
+        this.matchTime--;
+        io.to(this.id).emit("match:timer", this.matchTime);
+      } else if (this.matchActive) {
+        this.matchActive = false;
+        this.matchResults = Array.from(this.players.values()).map(p => ({
+          id: p.id,
+          name: p.name,
+          shipsOwned: p.ownedSeeds.length,
+          kills: p.matchKills || 0,
+        })).sort((a, b) => b.shipsOwned - a.shipsOwned);
+
+        io.to(this.id).emit("match:end", this.matchResults);
+
+        setTimeout(() => {
+          this.matchTime = 120;
+          this.matchActive = true;
+          
+          this.players.forEach(p => {
+            p.matchKills = 0;
+            p.ownedSeeds = [p.activeSeed];
+            const stats = getShipStats(p.activeSeed);
+            p.health = stats.maxHealth;
+            p.isDead = false;
+            p.position = [(Math.random() - 0.5) * 2000, (Math.random() - 0.5) * 500, -3000 + (Math.random() - 0.5) * 2000];
+            p.quaternion = [0, 0, 0, 1];
+          });
+
+          this.npcs.clear();
+          if (this.isTraining) {
+            for (let i = 0; i < 5; i++) {
+              this.spawnNPC(`npc-${i}`);
+            }
+          }
+
+          io.to(this.id).emit("match:start");
+          io.to(this.id).emit("init", [...Array.from(this.players.values()), ...Array.from(this.npcs.values())]);
+          io.to(this.id).emit("leaderboard:update", this.getLeaderboard());
+        }, 10000);
+      }
+    }
+  }
+
+  const rooms = new Map<string, GameRoom>();
+  
+  // Global Multiplayer Room
+  rooms.set("global", new GameRoom("global", false));
+
+  setInterval(() => {
+    rooms.forEach(room => {
+      room.updateNPCs();
+    });
+  }, 100);
+
+  setInterval(() => {
+    rooms.forEach(room => {
+      room.updateTimer();
+    });
   }, 1000);
 
   io.on("connection", (socket) => {
     console.log("Player connected:", socket.id);
+    let currentRoomId: string | null = null;
 
     socket.on("join", (data) => {
-      if (seedOwners.has(data.seed) && seedOwners.get(data.seed) !== socket.id) {
+      const isTraining = data.mode === "training";
+      const roomId = isTraining ? `training-${socket.id}` : "global";
+      currentRoomId = roomId;
+      
+      socket.join(roomId);
+
+      if (!rooms.has(roomId)) {
+        rooms.set(roomId, new GameRoom(roomId, isTraining));
+      }
+      const room = rooms.get(roomId)!;
+
+      if (room.seedOwners.has(data.seed) && room.seedOwners.get(data.seed) !== socket.id) {
         socket.emit("join_error", "Seed already owned by another player!");
         return;
       }
 
-      seedOwners.set(data.seed, socket.id);
+      room.seedOwners.set(data.seed, socket.id);
       const stats = getShipStats(data.seed);
 
       const newPlayer = {
@@ -168,21 +193,23 @@ async function startServer() {
         isDead: false,
         matchKills: 0,
       };
-      players.set(socket.id, newPlayer);
+      room.players.set(socket.id, newPlayer);
       
       socket.emit("join_success", newPlayer);
-      socket.emit("init", [...Array.from(players.values()), ...Array.from(npcs.values())]);
-      socket.broadcast.emit("player:join", newPlayer);
-      io.emit("leaderboard:update", getLeaderboard());
-      socket.emit("match:timer", matchTime);
+      socket.emit("init", [...Array.from(room.players.values()), ...Array.from(room.npcs.values())]);
+      socket.to(roomId).emit("player:join", newPlayer);
+      io.to(roomId).emit("leaderboard:update", room.getLeaderboard());
+      socket.emit("match:timer", room.matchTime);
     });
 
     socket.on("move", (data) => {
-      if (players.has(socket.id)) {
-        const player = players.get(socket.id);
+      if (!currentRoomId) return;
+      const room = rooms.get(currentRoomId);
+      if (room && room.players.has(socket.id)) {
+        const player = room.players.get(socket.id);
         player.position = data.position;
         player.quaternion = data.quaternion;
-        socket.broadcast.emit("player:move", {
+        socket.to(currentRoomId).emit("player:move", {
           id: socket.id,
           position: data.position,
           quaternion: data.quaternion,
@@ -191,12 +218,17 @@ async function startServer() {
     });
 
     socket.on("shoot", (data) => {
-      io.emit("bullet:new", { ...data, ownerId: socket.id });
+      if (!currentRoomId) return;
+      io.to(currentRoomId).emit("bullet:new", { ...data, ownerId: socket.id });
     });
 
     socket.on("damage", (data) => {
-      const target = players.get(data.targetId) || npcs.get(data.targetId);
-      const attacker = players.get(data.attackerId) || npcs.get(data.attackerId);
+      if (!currentRoomId) return;
+      const room = rooms.get(currentRoomId);
+      if (!room) return;
+
+      const target = room.players.get(data.targetId) || room.npcs.get(data.targetId);
+      const attacker = room.players.get(data.attackerId) || room.npcs.get(data.attackerId);
 
       if (target && target.health > 0 && !target.isDead) {
         let damageAmount = data.amount;
@@ -205,46 +237,41 @@ async function startServer() {
         }
         target.health -= damageAmount;
         
-        io.emit("player:health", { id: target.id, health: target.health });
+        io.to(currentRoomId).emit("player:health", { id: target.id, health: target.health });
         if (data.bulletId !== "planet" && data.bulletId !== "player_collision") {
-          io.emit("bullet:destroy", data.bulletId);
+          io.to(currentRoomId).emit("bullet:destroy", data.bulletId);
         }
 
         if (target.health <= 0) {
           target.health = 0;
           target.isDead = true;
           
-          // Track kills
           if (attacker && !attacker.isNPC && attacker.id !== target.id) {
             attacker.matchKills = (attacker.matchKills || 0) + 1;
           }
 
-          // Transfer seeds (only between real players)
           if (attacker && !attacker.isNPC && !target.isNPC && attacker.id !== target.id) {
             target.ownedSeeds.forEach((seed: string) => {
               if (!attacker.ownedSeeds.includes(seed)) {
                 attacker.ownedSeeds.push(seed);
-                seedOwners.set(seed, attacker.id);
+                room.seedOwners.set(seed, attacker.id);
               }
             });
             target.ownedSeeds = [];
-            io.emit("leaderboard:update", getLeaderboard());
+            io.to(currentRoomId).emit("leaderboard:update", room.getLeaderboard());
           }
 
-          io.emit("player:die", { id: target.id, attackerId: data.attackerId });
+          io.to(currentRoomId).emit("player:die", { id: target.id, attackerId: data.attackerId });
           
-          // Respawn logic
           setTimeout(() => {
             if (target.isNPC) {
-              // NPC respawn
-              npcs.delete(target.id);
-              spawnNPC(target.id);
-            } else if (players.has(target.id)) {
-              const p = players.get(target.id);
+              room.npcs.delete(target.id);
+              room.spawnNPC(target.id);
+            } else if (room.players.has(target.id)) {
+              const p = room.players.get(target.id);
               
-              // Generate new random seed for respawn
               const newSeed = Math.random().toString(36).substring(2, 10).toUpperCase();
-              seedOwners.set(newSeed, p.id);
+              room.seedOwners.set(newSeed, p.id);
               const newStats = getShipStats(newSeed);
               
               p.activeSeed = newSeed;
@@ -254,14 +281,14 @@ async function startServer() {
               p.isDead = false;
               p.position = [(Math.random() - 0.5) * 500, 0, -2800 + (Math.random() - 0.5) * 500];
               
-              io.emit("player:respawn", { 
+              io.to(currentRoomId).emit("player:respawn", { 
                 id: p.id, 
                 position: p.position, 
                 health: p.health,
                 activeSeed: p.activeSeed,
                 stats: p.stats
               });
-              io.emit("leaderboard:update", getLeaderboard());
+              io.to(currentRoomId).emit("leaderboard:update", room.getLeaderboard());
             }
           }, 3000);
         }
@@ -270,15 +297,24 @@ async function startServer() {
 
     socket.on("disconnect", () => {
       console.log("Player disconnected:", socket.id);
-      const player = players.get(socket.id);
-      if (player) {
-        // Free up seeds
-        player.ownedSeeds.forEach((seed: string) => {
-          seedOwners.delete(seed);
-        });
-        players.delete(socket.id);
-        io.emit("player:leave", socket.id);
-        io.emit("leaderboard:update", getLeaderboard());
+      if (currentRoomId) {
+        const room = rooms.get(currentRoomId);
+        if (room) {
+          const player = room.players.get(socket.id);
+          if (player) {
+            player.ownedSeeds.forEach((seed: string) => {
+              room.seedOwners.delete(seed);
+            });
+            room.players.delete(socket.id);
+            io.to(currentRoomId).emit("player:leave", socket.id);
+            io.to(currentRoomId).emit("leaderboard:update", room.getLeaderboard());
+          }
+          
+          // Cleanup training room
+          if (room.isTraining && room.players.size === 0) {
+            rooms.delete(currentRoomId);
+          }
+        }
       }
     });
   });

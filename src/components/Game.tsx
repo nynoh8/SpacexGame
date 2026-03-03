@@ -15,7 +15,7 @@ import { Radar, RadarLogic } from "./Radar";
 import { GameUI } from "./GameUI";
 
 
-export function Game({ initialSeed, playerName, onExit }: { initialSeed: string; playerName: string; onExit: () => void }) {
+export function Game({ initialSeed, playerName, onExit, mode }: { initialSeed: string; playerName: string; onExit: () => void; mode: "training" | "multiplayer" }) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [players, setPlayers] = useState<any[]>([]);
   const [health, setHealth] = useState(100);
@@ -48,7 +48,8 @@ export function Game({ initialSeed, playerName, onExit }: { initialSeed: string;
         name: playerName,
         seed: initialSeed,
         position: [(Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100],
-        quaternion: [0, 0, 0, 1]
+        quaternion: [0, 0, 0, 1],
+        mode: mode
       });
     });
 

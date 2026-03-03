@@ -18,7 +18,7 @@ export function MobileControls() {
 
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768);
+      setIsMobile(('ontouchstart' in window) || (navigator.maxTouchPoints > 0));
     };
     checkMobile();
     window.addEventListener('resize', checkMobile);
