@@ -4,6 +4,14 @@ import * as THREE from "three";
 import { Socket } from "socket.io-client";
 import { activeBullets } from "../game/state";
 
+const normalGeometry = new THREE.CapsuleGeometry(0.2, 2, 4, 8);
+normalGeometry.rotateX(Math.PI / 2);
+const normalMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
+
+const missileGeometry = new THREE.CapsuleGeometry(0.5, 4, 4, 8);
+missileGeometry.rotateX(Math.PI / 2);
+const missileMaterial = new THREE.MeshBasicMaterial({ color: 0xff5500 });
+
 export function BulletsManager({ socket }: { socket: Socket }) {
   const groupRef = useRef<THREE.Group>(null);
   const bullets = useRef<
@@ -16,11 +24,9 @@ export function BulletsManager({ socket }: { socket: Socket }) {
   useEffect(() => {
     const onBullet = (data: any) => {
       const isMissile = data.type === 'missile';
-      const geometry = isMissile 
-        ? new THREE.CapsuleGeometry(0.5, 4, 4, 8) 
-        : new THREE.CapsuleGeometry(0.2, 2, 4, 8);
-      geometry.rotateX(Math.PI / 2);
-      const material = new THREE.MeshBasicMaterial({ color: isMissile ? 0xff5500 : 0x00ffcc });
+      const geometry = isMissile ? missileGeometry : normalGeometry;
+      const material = isMissile ? missileMaterial : normalMaterial;
+      
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.fromArray(data.position);
 
@@ -46,8 +52,6 @@ export function BulletsManager({ socket }: { socket: Socket }) {
       const bullet = bullets.current.get(id);
       if (bullet) {
         groupRef.current?.remove(bullet.mesh);
-        bullet.mesh.geometry.dispose();
-        (bullet.mesh.material as THREE.Material).dispose();
         bullets.current.delete(id);
         activeBullets.delete(id);
       }
@@ -66,8 +70,6 @@ export function BulletsManager({ socket }: { socket: Socket }) {
     bullets.current.forEach((bullet, id) => {
       if (now - bullet.spawnedAt > 2000) {
         groupRef.current?.remove(bullet.mesh);
-        bullet.mesh.geometry.dispose();
-        (bullet.mesh.material as THREE.Material).dispose();
         bullets.current.delete(id);
         activeBullets.delete(id);
       } else {

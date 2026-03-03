@@ -19,7 +19,10 @@ import {
   Hash,
   User,
   Swords,
-  Target
+  Target,
+  LogIn,
+  LogOut,
+  Lock
 } from "lucide-react";
 
 export default function App() {
@@ -28,15 +31,61 @@ export default function App() {
   const [seed, setSeed] = useState("");
   const [playerName, setPlayerName] = useState("");
   const [stats, setStats] = useState<any>(null);
+  const [user, setUser] = useState<any>(null);
   const viewerRef = useRef<SpaceshipViewerRef>(null);
+
+  const checkAuth = async () => {
+    try {
+      const res = await fetch("/api/auth/me");
+      if (res.ok) {
+        const data = await res.json();
+        setUser(data);
+        setPlayerName(data.name);
+      } else {
+        setUser(null);
+      }
+    } catch (e) {
+      setUser(null);
+    }
+  };
 
   useEffect(() => {
     handleGenerate();
     globalGameManager.init();
+    checkAuth();
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        checkAuth();
+      }
+    };
+    window.addEventListener('message', handleMessage);
+
     return () => {
       globalGameManager.loop.stop();
+      window.removeEventListener('message', handleMessage);
     };
   }, []);
+
+  const handleLogin = async () => {
+    try {
+      const res = await fetch("/api/auth/google/url");
+      const { url } = await res.json();
+      window.open(url, "google_login", "width=500,height=600");
+    } catch (e) {
+      console.error("Login error", e);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      setUser(null);
+      setPlayerName("");
+    } catch (e) {
+      console.error("Logout error", e);
+    }
+  };
 
   const handleGenerate = () => {
     const newSeed = Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -77,6 +126,32 @@ export default function App() {
             <Box className="w-5 h-5 text-emerald-400" />
           </div>
           <h1 className="text-xl font-semibold tracking-tight">AeroForge 3D</h1>
+        </div>
+
+        <div className="flex items-center gap-4">
+          {user ? (
+            <div className="flex items-center gap-3 bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
+              {user.picture && (
+                <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full" referrerPolicy="no-referrer" />
+              )}
+              <span className="text-sm font-medium text-gray-200">{user.name}</span>
+              <button 
+                onClick={handleLogout}
+                className="p-1 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white"
+                title="Logout"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleLogin}
+              className="flex items-center gap-2 px-4 py-2 bg-white text-black hover:bg-gray-200 rounded-full transition-all font-semibold text-sm"
+            >
+              <LogIn className="w-4 h-4" />
+              <span>Login with Google</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -147,10 +222,11 @@ export default function App() {
 
               <button
                 onClick={() => setMode("multiplayer")}
-                disabled={!seed}
+                disabled={!seed || !user}
+                title={!user ? "Login required to play Multiplayer" : ""}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-600 disabled:text-gray-400 text-white rounded-xl transition-all font-bold shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] disabled:shadow-none"
               >
-                <Swords className="w-5 h-5" />
+                {!user ? <Lock className="w-5 h-5" /> : <Swords className="w-5 h-5" />}
                 <span>MULTIPLAYER</span>
               </button>
             </div>

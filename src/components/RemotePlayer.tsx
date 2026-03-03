@@ -4,19 +4,24 @@ import * as THREE from "three";
 import { generateSpaceship } from "../utils/spaceshipGenerator";
 import { SpaceshipModel } from "./SpaceshipModel";
 
+const explosionGeometry = new THREE.SphereGeometry(1, 32, 32);
+const explosionMaterial = new THREE.MeshBasicMaterial({ color: "#ff5500", transparent: true, opacity: 1 });
+
 export function Explosion({ position }: { position: [number, number, number] }) {
   const ref = useRef<THREE.Mesh>(null);
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const material = useMemo(() => explosionMaterial.clone(), []);
+
   useFrame((_, delta) => {
-    if (ref.current) {
+    if (ref.current && materialRef.current) {
       ref.current.scale.addScalar(delta * 20);
-      (ref.current.material as THREE.MeshBasicMaterial).opacity -= delta * 1.5;
+      materialRef.current.opacity -= delta * 1.5;
     }
   });
 
   return (
-    <mesh position={position} ref={ref}>
-      <sphereGeometry args={[1, 32, 32]} />
-      <meshBasicMaterial color="#ff5500" transparent opacity={1} />
+    <mesh position={position} ref={ref} geometry={explosionGeometry}>
+      <primitive object={material} ref={materialRef} attach="material" />
     </mesh>
   );
 }
@@ -64,20 +69,19 @@ export function RemotePlayer({
     }
   });
 
-  if (isDead) {
-    return explosionPos ? <Explosion position={explosionPos} /> : null;
-  }
-
   return (
     <group ref={ref}>
-      <SpaceshipModel parts={parts} />
-      {/* Top light for visibility */}
-      <pointLight
-        position={[0, 8, 0]}
-        intensity={3}
-        color="#f8fafc"
-        distance={40}
-      />
+      <group visible={!isDead}>
+        <SpaceshipModel parts={parts} />
+        {/* Top light for visibility */}
+        <pointLight
+          position={[0, 8, 0]}
+          intensity={3}
+          color="#f8fafc"
+          distance={40}
+        />
+      </group>
+      {isDead && explosionPos && <Explosion position={explosionPos} />}
     </group>
   );
 }

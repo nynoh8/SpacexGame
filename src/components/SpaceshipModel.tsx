@@ -2,6 +2,10 @@ import React, { forwardRef } from "react";
 import * as THREE from "three";
 import { Part } from "../utils/spaceshipGenerator";
 
+const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+const cylinderGeometry = new THREE.CylinderGeometry(1, 1, 1, 16);
+const coneGeometry = new THREE.ConeGeometry(1, 1, 16);
+
 export const SpaceshipModel = forwardRef<THREE.Group, { parts: Part[] }>(
   ({ parts }, ref) => {
     return (
@@ -10,16 +14,16 @@ export const SpaceshipModel = forwardRef<THREE.Group, { parts: Part[] }>(
           let geometry;
           switch (part.type) {
             case "box":
-              geometry = <boxGeometry args={[1, 1, 1]} />;
+              geometry = boxGeometry;
               break;
             case "cylinder":
-              geometry = <cylinderGeometry args={[1, 1, 1, 16]} />;
+              geometry = cylinderGeometry;
               break;
             case "cone":
-              geometry = <coneGeometry args={[1, 1, 16]} />;
+              geometry = coneGeometry;
               break;
             default:
-              geometry = <boxGeometry args={[1, 1, 1]} />;
+              geometry = boxGeometry;
           }
 
           return (
@@ -28,10 +32,10 @@ export const SpaceshipModel = forwardRef<THREE.Group, { parts: Part[] }>(
               position={part.position}
               scale={part.scale}
               rotation={part.rotation}
+              geometry={geometry}
               castShadow
               receiveShadow
             >
-              {geometry}
               <meshStandardMaterial
                 color={part.color}
                 roughness={0.4}

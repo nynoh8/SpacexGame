@@ -2,10 +2,15 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import { Server } from "socket.io";
 import http from "http";
+import cookieParser from "cookie-parser";
+import { OAuth2Client } from "google-auth-library";
 import { getShipStats } from "./src/utils/shipStats";
 
 async function startServer() {
   const app = express();
+  app.use(cookieParser());
+  app.use(express.json());
+  
   const server = http.createServer(app);
   const io = new Server(server, {
     cors: {
@@ -13,6 +18,99 @@ async function startServer() {
     },
   });
   const PORT = 3000;
+
+  const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+  const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+  const client = new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+
+  // Auth Routes
+  app.get("/api/auth/google/url", (req, res) => {
+    const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+    const redirectUri = `${baseUrl}/auth/callback`;
+    const url = client.generateAuthUrl({
+      access_type: "offline",
+      scope: ["https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/userinfo.email"],
+      redirect_uri: redirectUri,
+    });
+    res.json({ url });
+  });
+
+  app.get("/auth/callback", async (req, res) => {
+    const { code } = req.query;
+    const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+    const redirectUri = `${baseUrl}/auth/callback`;
+    
+    try {
+      const { tokens } = await client.getToken({
+        code: code as string,
+        redirect_uri: redirectUri,
+      });
+      client.setCredentials(tokens);
+
+      const ticket = await client.verifyIdToken({
+        idToken: tokens.id_token!,
+        audience: GOOGLE_CLIENT_ID,
+      });
+      const payload = ticket.getPayload();
+
+      if (payload) {
+        const userData = {
+          id: payload.sub,
+          email: payload.email,
+          name: payload.name,
+          picture: payload.picture,
+        };
+
+        res.cookie("session", JSON.stringify(userData), {
+          httpOnly: true,
+          secure: true,
+          sameSite: "none",
+          maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        });
+      }
+
+      res.send(`
+        <html>
+          <body>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+                window.close();
+              } else {
+                window.location.href = '/';
+              }
+            </script>
+            <p>Authentication successful. This window should close automatically.</p>
+          </body>
+        </html>
+      `);
+    } catch (error) {
+      console.error("Auth error:", error);
+      res.status(500).send("Authentication failed");
+    }
+  });
+
+  app.get("/api/auth/me", (req, res) => {
+    const session = req.cookies.session;
+    if (session) {
+      try {
+        res.json(JSON.parse(session));
+      } catch (e) {
+        res.status(401).json({ error: "Invalid session" });
+      }
+    } else {
+      res.status(401).json({ error: "Not authenticated" });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    res.clearCookie("session", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+    });
+    res.json({ success: true });
+  });
 
   class GameRoom {
     id: string;

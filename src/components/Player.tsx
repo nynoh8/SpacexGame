@@ -216,23 +216,23 @@ export function Player({
     }
   });
 
-  if (isDead) return null;
-
   return (
     <group ref={shipRef}>
-      <SpaceshipModel parts={parts} />
-      <pointLight
-        position={[0, 0, 5]}
-        intensity={2}
-        color="#dbeafe"
-        distance={20}
-      />
-      <pointLight
-        position={[0, 8, 0]}
-        intensity={3}
-        color="#f8fafc"
-        distance={40}
-      />
+      <group visible={!isDead}>
+        <SpaceshipModel parts={parts} />
+        <pointLight
+          position={[0, 0, 5]}
+          intensity={2}
+          color="#dbeafe"
+          distance={20}
+        />
+        <pointLight
+          position={[0, 8, 0]}
+          intensity={3}
+          color="#f8fafc"
+          distance={40}
+        />
+      </group>
     </group>
   );
 }
